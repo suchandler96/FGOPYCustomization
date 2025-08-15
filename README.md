@@ -1,17 +1,19 @@
-# Overview
-This project works as an example to customize one's [FGO-py](https://github.com/hgjazhgj/FGO-py) script so that it (1) either finishes a battle more efficiently (2) or applies a certain set of strategies to cast skills and select cards.
+# 项目概览
+本项目为魔改[FGO-py](https://github.com/hgjazhgj/FGO-py)提供了一套框架。我们知道FGO-py使用一套通用逻辑应对所有副本，但在某些场景中可以进一步优化，包括柱子战和容易暴毙的90++副本。而优化的手段则是用户手动指定一套出牌放技能策略，可以是成品作业，在配置不足时也可以模仿玩家自身逻辑选卡补刀、补NP等，从而形成作业和xjbd的结合。
 
-# What it can do...
-1. Finishing 90++ levels of events with a certain set of strategies, i.e., a master specifies explicitly which skills to cast and which cards to select at each stage;
-2. Finishing some easy battles more efficiently (like Fuyuki);
-3. Loop on a certain event quest (e.g., 90++) iteratively: clear the AP gauge, wait until you have 40 AP, and then continue to the next battle (This function is by default enabled).
+尽管已经提供了简单明了的安装指导和函数说明，本项目仍需要少量Python基础。
 
-# What it cannot do...
-1. Finishing a battle that even the master does not how to deal with.
+# 本项目可以做到...
+1. 以特定策略完成活动90++副本，即玩家显式指定每面的出卡放技能策略，并在1回合清不掉最后一面时继续补刀；
+2. 提升异常简单的副本的通关效率（如冬木）；
+3. 循环刷某个副本（如活动90++）: 清空AP，自回体到40AP后继续下一场（本功能默认启用，且暂不提供接口关闭）。
 
-# Install
+# 本项目不能...
+1. 完成玩家都不知如何应对的副本。
+
+# 安装
 ## Windows
-1. Organize your directories as follows:
+1. 按照以下目录结构组织文件：
 ```
 |-- FGO-py.portable\
 |   |-- FGO-py.bat
@@ -26,7 +28,7 @@ This project works as an example to customize one's [FGO-py](https://github.com/
 |   |   |-- install.py
 |   |   |-- ...
 ```
-2. Change `FGO-py.bat` as follows (note we launch `install.py`) (please back up `FGO-py.bat` before you change it):
+2. 按下修改`FGO-py.bat`（注意调用了`install.py`），并请在修改前备份原文件：
 ```
 @echo off
 title FGO-py
@@ -43,7 +45,7 @@ python ../../FGOPYCustomization/install.py
 python fgo.py
 ```
 ## Linux
-1. Organize your directories as follows:
+1. 按照以下目录结构组织文件：
 ```
 |-- FGO-py\
 |   |-- deploy\
@@ -56,21 +58,21 @@ python fgo.py
 ```
 2. `cd FGO-py/FGO-py && python3 ../../FGOPYCustomization/install.py`
 
-# Detailed usage if you want to customize your own Turn classes
-1. Inherit a class from `class Turn` or `class CustomTurn`(added in the patch file) and implement it with your own strategy (`NoHouguNoSkillTurn` and `Summer890PPTurn` in this repo are two examples). Give your customized Turn class a different name and put it in `FGO-py/FGO-py/customTurn.py` (create a new file);
-2. For linux users, please run `install.py` every time you change `customTurn.py` for the changes to take effect. On Windows, the modified `FGO-py.bat` has already done this for you.
-3. Note the FGO-py repo will be automatically `git reset --hard` in `install.py`;
-4. After these steps, when FGO-py runs, it will call your implementation instead of the original `Turn` class. If you want to use the default `Turn` class, you can delete or rename your `customTurn.py` so that `install.py` will not find it.
-5. Some APIs provided in `class CustomTurn`:
-   - `selectCard_for_np(self,servant_id)`: select cards such that the specified servant can gain the most NP. `servant_id` starts from 0;
-   - `castSingleOrNoTargetServantSkill(self,pos,skill,target)`: cast a servant skill. If it needs one target, set `target` to 0/1/2, depending on the target position; If it does not involve a target, set `target` to -1. `pos` and `skill` also start from 0;
-   - `castMasterSkill(self, skill, targets)`: cast a master skill. `targets` should be a list of integers, even if it only needs one target. For instance, swapping the positions of the first and the 4th servants would require `targets = [0, 3]`;
-   - `getNP(self)`: return a list of 3 integers;
-   - `getServantHP(self)`: return a list of 3 integers.
+# 定制策略的详细说明
+1. 继承`class Turn`或`class CustomTurn`（安装后可以在`fgoKernel.py`中看到）实现自己的类，参考本项目中的`NoHouguNoSkillTurn`和`Summer890PPTurn`。核心代码可以直接从`class Turn`复制然后魔改。给这个类起个新名字，并放在`FGO-py/FGO-py/customTurn.py`中（要创建新文件）；
+2. Linux用户请在每次更改`customTurn.py`后执行`python3 install.py`。Windows上这步已经涵盖在更改后的`FGO-py.bat`中了，无需额外操作；
+3. 注意FGO-py仓库会在执行`install.py`时强制被`git reset --hard`。
+4. 完成上述步骤后，FGO-py运行时会自动调用你实现的类，而非原本的`Turn`类。若想用回原本的`Turn`，请将`customTurn.py`重命名或删除。
+5. `class CustomTurn`中实现了些便利的接口供参考：
+   - `selectCard_for_np(self,servant_id)`：选择能使指定从者获得最多NP的卡。`servant_id`从0开始计数；
+   - `castSingleOrNoTargetServantSkill(self,pos,skill,target)`：使用从者技能。若涉及单个目标，则`target`为0/1/2，对应场上三名从者；若不需选择目标，则`target`要设为-1。`pos`和`skill`也从0开始计数；
+   - `castMasterSkill(self, skill, targets)`：使用御主技能。不论有几个目标，`targets`均应为整数列表。如换人服交换1号和4号位，则`targets = [0, 3]`；
+   - `getNP(self)`：返回一个包含3个整数的列表；
+   - `getServantHP(self)`：返回一个包含3个整数的列表。
 
-# Uninstall
+# 卸载
 ## Windows
-1. Recover `FGO-py.bat` as follows (below shows the original code in case you didn't do backup before changing):
+1. 按下恢复`FGO-py.bat`：
 ```
 @echo off
 title FGO-py
@@ -85,16 +87,16 @@ if errorlevel 1 (
 )
 python fgo.py
 ```
-2. Delete the directory `FGOPYCustomization` if you wish.
+2. 删除`FGOPYCustomization`目录。
 ## Linux
 1. `cd FGO-py/FGO-py && rm -rf fgoImage/slash.png && git reset --hard origin/master`
-2. Delete the directory `FGOPYCustomization` if you wish.
+2. 删除`FGOPYCustomization`目录。
 
-# Some personal understanding of some variables in `FGO-py/FGO-py/fgoKernel.py`
-1. class Turn -> self.servant: `list[int]`, each element corresponds to the ID of the servant. E.g., Mash Kyrielight = 1
-2. class Turn -> color: `list[int]`, each element corresponds to the color of the card. 0: Arts, 1: Quick, 2: Buster;
-3. class Turn -> group: `list[int]`, each element corresponds to the servant position ID of each of the 8 cards (5 regular + 3 Hougu), i.e., it must be a list consisting of 0,1,2 and a fixed length 8.
+# `FGO-py/FGO-py/fgoKernel.py`中部分变量的个人理解
+1. class Turn -> self.servant: `list[int]`，每个元素对应从者ID，如玛修=1； 
+2. class Turn -> color: `list[int]`，每个元素对应指令卡颜色。0：Arts，1：Quick，2：Buster；
+3. class Turn -> group: `list[int]`，每个元素对应场上8张指令卡（5发牌+3宝具）的所属从者站位。它必定由0、1、2组成且长度固定为8。
 
-# Some tips
-1. Customization is in fact against the design principle of FGO-py. So please be cautious when you want to send an issue or pull request to the FGO-py project.
-2. Salute to FGO-py project!
+# 附注
+1. 定制化与FGO-py的项目宗旨存在冲突，本项目仅为个人魔改，所以向FGO-py提交issue和PR前请三思。
+2. 向FGO-py项目致敬！
