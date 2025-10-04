@@ -10,7 +10,7 @@ os.system("cd " + os.path.dirname(os.path.abspath(__file__)) + " && git pull")
 os.system("git reset --hard origin/master")
 os.system("git apply " + os.path.join(os.path.dirname(os.path.abspath(__file__)), f"diff_{PATCH_VER}.patch"))
 if os.path.exists("customizedTurn.py"):
-    with open("customizedTurn.py") as f:
+    with open("customizedTurn.py", encoding="utf-8") as f:
         cus_lines = f.readlines()
     class_name = None
     for line in cus_lines:
@@ -20,7 +20,7 @@ if os.path.exists("customizedTurn.py"):
     assert class_name != "Turn", "Your customized turn class should not be named 'Turn'."
     if class_name is not None:
         print(f"Customized Turn class found: {class_name}, adding it to fgoKernel.py...")
-        with open("fgoKernel.py", "r+") as f:
+        with open("fgoKernel.py", "r+", encoding="utf-8") as f:
             battle_class_line = 0
             lines = f.readlines()
             for i, line in enumerate(lines):
