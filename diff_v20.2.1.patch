@@ -1,5 +1,43 @@
+diff --git a/FGO-py/fgoAndroid.py b/FGO-py/fgoAndroid.py
+index 0fcab30..ecacc16 100644
+--- a/FGO-py/fgoAndroid.py
++++ b/FGO-py/fgoAndroid.py
+@@ -18,7 +18,10 @@ class Android(Airtest):
+             return
+         try:
+             super().__init__(serial,**{'cap_method':CAP_METHOD.JAVACAP}|kwargs)
+-            self.package=next(i for i in re.findall(r'ACTIVITY ([A-Za-z0-9_.]+)/',self.adb.shell('dumpsys activity top'))[::-1]if(lambda x:x[2]-x[0]>959 and x[3]-x[1]>539)(self.get_render_resolution(True,i)))
++            from fgoConst import PACKAGE_TO_REGION
++            self.package=next(i for i in re.findall(r'ACTIVITY ([A-Za-z0-9_.]+)/',self.adb.shell('dumpsys activity top'))[::-1]
++                              if(lambda x, y:x[2]-x[0]>959 and x[3]-x[1]>539 and y in PACKAGE_TO_REGION.keys())
++                              (self.get_render_resolution(True,i), i))
+             self.adjustOffset()
+             self.rotation_watcher.reg_callback(lambda _:self.adjustOffset())
+         except Exception as e:
+diff --git a/FGO-py/fgoCli.py b/FGO-py/fgoCli.py
+index 9b220c5..f026542 100644
+--- a/FGO-py/fgoCli.py
++++ b/FGO-py/fgoCli.py
+@@ -154,7 +154,8 @@ Some commands support <command> [<subcommand> ...] {{-h, --help}} for further in
+         'Loop for battle until AP empty'
+         arg=parser_main.parse_args(line.split())
+         fgoKernel.schedule.stopLater(arg.appoint)
+-        self.work=fgoKernel.Operation(arg.quest,arg.appleCount,['gold','silver','bronze','copper','quartz'].index(arg.appleKind))
++        self.work=fgoKernel.Operation(arg.quest,arg.appleCount,['gold','silver','bronze','copper','quartz'].index(arg.appleKind),
++                                      battleClass=eval("lambda:fgoKernel.Battle(fgoKernel."+arg.turnClass+")"))
+         self.do_continue(f'-s {arg.sleep}')
+     def complete_main(self,text,line,begidx,endidx):
+         return self.completecommands({
+@@ -285,6 +286,7 @@ parser_main.add_argument('appleKind',help='Apple Kind (default: %(default)s)',ty
+ parser_main.add_argument('-s','--sleep',help='Sleep before run (default: %(default)s)',type=validator(str,lambda x:re.match(r'\d+([:.]\d+)*$',x),'timedelta'),default='0')
+ parser_main.add_argument('-a','--appoint',help='Battle count limit (default: %(default)s for no limit)',type=validator(int,lambda x:x>=0,'nonnegative int'),default=0)
+ parser_main.add_argument('-q','--quest',help='Goto different quests for different times',action='append',type=ArgStruct(lambda x:tuple(int(i)for i in x.split('-')),validator(int,lambda x:x>=0,'nonnegative int')),default=[],nargs=2)
++parser_main.add_argument('--turnClass',type=str,default="Turn")
+ 
+ parser_press=ArgParser(prog='press',description=Cmd.do_press.__doc__)
+ parser_press.add_argument('button',help='Button',type=str.upper)
 diff --git a/FGO-py/fgoDetect.py b/FGO-py/fgoDetect.py
-index 03b4a7a..ed849f9 100644
+index 03b4a7a..2d90957 100644
 --- a/FGO-py/fgoDetect.py
 +++ b/FGO-py/fgoDetect.py
 @@ -45,6 +45,9 @@ class XDetectBase(metaclass=logMeta(logger)):
@@ -12,24 +50,7 @@ index 03b4a7a..ed849f9 100644
                  return wrap(type(self)(),*args,**kwargs)
              return wrap
          return wrapper
-@@ -103,7 +106,7 @@ class XDetectBase(metaclass=logMeta(logger)):
-     def isBattleDefeated(self):return self._compare(self.tmpl.DEFEATED,(603,100,690,176))
-     def isBattleFinished(self):return self._compare(self.tmpl.DROPITEM,(110,30,264,76))
-     def isBattleFormation(self):return self._compare(self.tmpl.BATTLEBEGIN,(1070,632,1270,710))
--    def isChooseFriend(self):return any(self._compare(i,(1189,190,1210,243))for i in(self.tmpl.CHOOSEFRIEND,self.tmpl.CHOOSEFRIENDEX))
-+    def isChooseFriend(self):return any(self._compare(i,(1189,190,1210,243), .15)for i in(self.tmpl.CHOOSEFRIEND,self.tmpl.CHOOSEFRIENDEX))
-     def isCardSealed(self):return[self._compare(self.tmpl.CHARASEALED,(76+257*i,479,225+257*i,533),.3)or any(self._compare(j,(44+257*i,492,68+257*i,528),.14)for j in(self.tmpl.CARDSEALEDARTS,self.tmpl.CARDSEALEDQUICK,self.tmpl.CARDSEALEDBUSTER))for i in range(5)]
-     def isFpContinue(self):return self._compare(self.tmpl.FPCONTINUE,(646,639,883,707))
-     def isFpSummon(self):return self._compare(self.tmpl.FPSUMMON,(643,20,812,67))
-@@ -158,13 +161,53 @@ class XDetectBase(metaclass=logMeta(logger)):
-     def getFieldServantHp(self,pos):return self._ocrInt((200+317*pos,620,293+317*pos,644))
-     def getFieldServantNp(self,pos):return self._ocrInt((220+317*pos,655,271+317*pos,680))
-     def getMaterial(self):return(lambda x:{materialImg[i][0]:x.count(i)for i in set(x)-{None}})([self._select(((i[1],None)for i in materialImg),(176+i%7*137,110+i//7*142,253+i%7*137,187+i//7*142),.02)for i in range(1,21)])
--    def getSkillTargetCount(self):return(lambda x:numpy.bincount(numpy.diff(x))[1]+x[0])(cv2.dilate(numpy.max(cv2.threshold(numpy.max(self._crop((306,320,973,547)),axis=2),67,1,cv2.THRESH_BINARY)[1],axis=0).reshape(1,-1),numpy.ones((1,66),numpy.uint8)).ravel())if self._compare(self.tmpl.CROSS,(1083,139,1113,166))else 0
-+    def getSkillTargetCount(self):return(lambda x:numpy.bincount(numpy.diff(x))[1]+x[0])(cv2.dilate(numpy.max(cv2.threshold(numpy.max(self._crop((306,320,973,547)),axis=2),67,1,cv2.THRESH_BINARY)[1],axis=0).reshape(1,-1),numpy.ones((1,66),numpy.uint8)).ravel())if self._compare(self.tmpl.CROSS,(1083,139,1113,166), .15)else 0
-     @retryOnError()
-     @validate()
-     def getStage(self):return self._ocrInt((884,14,902,37))
+@@ -165,6 +168,43 @@ class XDetectBase(metaclass=logMeta(logger)):
      @retryOnError()
      @validate()
      def getStageTotal(self):return self._ocrInt((912,13,932,38))
@@ -41,7 +62,7 @@ index 03b4a7a..ed849f9 100644
 +        curr_ap_line_btm = slash_center_coord[1] + (self.tmpl.SLASH[0].shape[0]>>1)
 +        slash_left = slash_center_coord[0] - (self.tmpl.SLASH[0].shape[1]>>1)
 +        slash_right = slash_center_coord[0] + (self.tmpl.SLASH[0].shape[1]>>1)
-+        # self.save(name="ocr_ap_to_consume", rect=(728,curr_ap_line_top-36,800,curr_ap_line_top))
++
 +        ap_to_consume = self._ocrInt((728,curr_ap_line_top-36,800,curr_ap_line_top))
 +        ap_enough = True
 +        for i in range(curr_ap_line_top-36, curr_ap_line_top):
@@ -51,7 +72,6 @@ index 03b4a7a..ed849f9 100644
 +                    break
 +        print("ap_enough:", ap_enough)
 +
-+        # self.save(name="ocr_ap_current", rect=(656,curr_ap_line_top,slash_left,curr_ap_line_btm))
 +        cur_ap_im = self._crop((656,curr_ap_line_top,slash_left,curr_ap_line_btm))
 +        blank = numpy.zeros(cur_ap_im.shape, cur_ap_im.dtype)
 +        dst = numpy.clip(cv2.addWeighted(cur_ap_im, 0.5, blank, 1-0.5, 150), 0, 255).astype(numpy.uint8)
@@ -63,33 +83,31 @@ index 03b4a7a..ed849f9 100644
 +
 +        dst = cv2.cvtColor(dst, cv2.COLOR_HSV2BGR)
 +        ap_current = OCR.EN.ocrInt(dst)
-+        # cv2.imwrite(time.strftime(f'processed_ocr_ap_current{f"_%Y-%m-%d_%H.%M.%S.{round(self.time*1000)%1000:03}"}.png',time.localtime(self.time)),dst,[cv2.IMWRITE_PNG_COMPRESSION,9])
 +
 +        if not ap_enough and ap_current >= ap_to_consume:
 +            print("ap_current =", ap_current, ", ap_to_consume =", ap_to_consume)
 +            print("potential error in OCR, setting ap_current to 0")
 +            ap_current = 0
 +
-+        # self.save(name="ocr_ap_full", rect=(slash_right,curr_ap_line_top,800,curr_ap_line_btm))
 +        ap_full = self._ocrInt((slash_right,curr_ap_line_top,800,curr_ap_line_btm))
 +        return ap_to_consume, ap_current, ap_full
      def getSummonHistory(self):XDetectBase._summonHistory=self._stack(XDetectBase._summonHistory,cv2.threshold(cv2.cvtColor(self._crop((147,157,1105,547)),cv2.COLOR_BGR2GRAY),128,255,cv2.THRESH_BINARY)[1],80)
      @classmethod
      def getSummonHistoryCount(cls):return cls.__new__(cls).inject(XDetectBase._summonHistory)._count((cls.tmpl.SUMMONHISTORY[0][...,0],cls.tmpl.SUMMONHISTORY[1]),(28,0,60,XDetectBase._summonHistory.shape[0]),.7)
-@@ -174,7 +217,7 @@ class XDetectBase(metaclass=logMeta(logger)):
-     def getTeamServantClassRank(self):return[(lambda x:x if x is None else classImg[0][x])(self._select(CLASS[100],(30+200*i+15*(i>2),133,115+200*i+15*(i>2),203)))for i in range(6)]
-     def getWeeklyMission(self):XDetectBase._weeklyMission=self._stack(XDetectBase._weeklyMission,self._crop((603,250,1092,710)),157)
-     def findChapter(self,chapter):return self._find((chapterImg[chapter],None),(640,90,1230,600),.016)
--    def findFriend(self,img):return self._find(img,(13,166,1233,720),.04)
-+    def findFriend(self,img):return self._find(img,(13,166,1233,720),.08)
-     def findMail(self,img):return self._find(img,(73,166,920,720),.016)
-     def findMapCamera(self,chapter):return numpy.array(cv2.minMaxLoc(cv2.matchTemplate(mapImg[chapter],cv2.resize(self._crop((200,200,1080,520)),(0,0),fx=.3,fy=.3,interpolation=cv2.INTER_CUBIC),cv2.TM_SQDIFF_NORMED))[2])/.3+(440,160)
-     @classmethod
-@@ -193,6 +236,47 @@ class XDetectBase(metaclass=logMeta(logger)):
+@@ -193,6 +233,56 @@ class XDetectBase(metaclass=logMeta(logger)):
  class XDetectCN(XDetectBase):
      tmpl=IMG_CN
      ocr=OCR.ZHS
 +    def getAP(self):
++        # import datetime
++        # time_stamp = str(datetime.datetime.now())
++        # try:
++        #     print(time_stamp, "save figure")
++        #     self.save()
++        # except:
++        #     print(time_stamp, "save figure failed")
++        #     pass
++
 +        # find the position of slash
 +        slash_center_coord = self._find(self.tmpl.SLASH, (662,328,800,365), .2)
 +        # originally, (662,328,800,365) -> (656,363,800,432)
@@ -133,23 +151,78 @@ index 03b4a7a..ed849f9 100644
      @classmethod
      def saveWeeklyMission(cls):
          result=[]
+@@ -219,7 +309,7 @@ class DetectBase(XDetectBase):
+     def __init__(self,anteLatency=.1,postLatency=0):
+         schedule.sleep(anteLatency)
+         super().__init__()
+-        fuse.increase()
++        fuse.increase(self)
+         schedule.sleep(postLatency)
+     def _compare(self,*args,**kwargs):return super()._compare(*args,**kwargs)and fuse.reset(self)
+     def _find(self,*args,**kwargs):
+diff --git a/FGO-py/fgoFuse.py b/FGO-py/fgoFuse.py
+index 9e67142..b98ab4a 100644
+--- a/FGO-py/fgoFuse.py
++++ b/FGO-py/fgoFuse.py
+@@ -1,7 +1,7 @@
+ from fgoLogging import getLogger
+ from fgoSchedule import ScriptStop
+ logger=getLogger('Fuse')
+-
++import fgoDevice
+ class Fuse:
+     def __init__(self,fv=300,logsize=10):
+         self.value=0
+@@ -9,14 +9,22 @@ class Fuse:
+         self.logsize=logsize
+         self.log=[None]*logsize
+         self.logptr=0
+-    def increase(self):
++        self.tried_press = False
++    def increase(self, detect=None):
+         logger.debug(f'{self.value}')
+         if self.value>self.max:
+-            self.save()
+-            raise ScriptStop('Fused')
++            if self.tried_press:
++                self.save(detect.save(name="FuseCheck"))
++                raise ScriptStop('Fused')
++            else:
++                self.tried_press = True
++                import datetime
++                print(datetime.datetime.now(), "try to avoid fuse")
++                fgoDevice.device.perform('\x08',(2100,))
+         self.value+=1
+     def reset(self,detect=None):
+         self.value=0
++        self.tried_press = False
+         if detect is not None and detect is not self.log[(self.logptr-1)%self.logsize]:
+             self.log[self.logptr]=detect
+             self.logptr=(self.logptr+1)%self.logsize
 diff --git a/FGO-py/fgoKernel.py b/FGO-py/fgoKernel.py
-index 368b46f..370330b 100644
+index 368b46f..979562f 100644
 --- a/FGO-py/fgoKernel.py
 +++ b/FGO-py/fgoKernel.py
-@@ -20,7 +20,7 @@
+@@ -17,10 +17,12 @@
+ # .  Grand Order/Anima Animusphere
+ # .     冠位指定/人理保障天球
+ 'Full-automatic FGO Script'
++import traceback
++
  from fgoConst import VERSION
  __version__=VERSION
  __author__='hgjazhgj'
 -import logging,numpy,pulp,random,re,time,threading
-+import logging,numpy,pulp,random,re,time,threading,datetime
++import cv2,logging,numpy,pulp,random,re,time,threading,datetime
  import fgoDevice
  from itertools import permutations
  from functools import wraps
-@@ -408,6 +408,245 @@ class Turn:
+@@ -408,6 +410,266 @@ class Turn:
          if t:=Detect(.4).getSkillTargetCount():fgoDevice.device.perform(['3333','2244','3234'][t-1][target],(300,))
          while not Detect().isTurnBegin():pass
          Detect(.5)
++
++
 +class CustomTurn:
 +    def __init__(self):
 +        self.stage=0
@@ -342,6 +415,23 @@ index 368b46f..370330b 100644
 +        else:fgoDevice.device.perform('\x08',(700,))
 +        while not Detect().isTurnBegin():pass
 +        Detect(.5)
++    # def castSingleOrNoTargetServantSkill(self,pos: int, skill: int ,target: int):
++    #     fgoDevice.device.press(('ASD','FGH','JKL')[pos][skill])
++    #     if Detect(.7).isSkillNone():
++    #         logger.warning(f'Skill {pos} {skill} Disabled')
++    #         self.countDown[0][pos][skill]=999
++    #         fgoDevice.device.press('\x08')
++    #     elif Detect.cache.isSkillCastFailed():
++    #         logger.warning(f'Skill {pos} {skill} Cast Failed')
++    #         self.countDown[0][pos][skill]=1
++    #         fgoDevice.device.press('J')
++    #     elif target > -1:
++    #         fgoDevice.device.perform('234'[target]+'\x08',(300,700))
++    #     else:
++    #         fgoDevice.device.perform('\x08',(700,))
++    #     while not Detect().isTurnBegin():pass
++    #     Detect(.5)
++
 +    def castSingleOrNoTargetServantSkill(self,pos,skill,target):
 +        fgoDevice.device.press(('ASD','FGH','JKL')[pos][skill])
 +        if Detect(.7).isSkillNone():
@@ -389,10 +479,12 @@ index 368b46f..370330b 100644
 +        Detect(.5)
 +    def getNP(self): return [Detect.cache.getFieldServantNp(i) for i in range(3)]
 +    def getServantHP(self): return [Detect.cache.getFieldServantHp(i)if self.servant[i][0]else 999999 for i in range(3)]
++
++
  class Battle:
      def __init__(self,turnClass=Turn):
          self.turn=0
-@@ -479,6 +718,19 @@ class Main:
+@@ -479,6 +741,20 @@ class Main:
                      if self.battleCount==battleTotal:
                          fgoDevice.device.press('F')
                          return logger.info('Operation Unit Completed')
@@ -409,6 +501,18 @@ index 368b46f..370330b 100644
 +                                    time.sleep(60)
 +                        except:
 +                            print("error in getAP(), continue directly")
++                            traceback.print_exc()
                      fgoDevice.device.press('K')
                      if Detect(.7,.3).isApEmpty()and not self.eatApple():return logger.info('Ap Empty')
                      self.chooseFriend()
+@@ -553,7 +829,9 @@ class Main:
+             if refresh:schedule.sleep(max(0,timer+10-time.time()))
+             fgoDevice.device.perform('\xBAK',(500,1000))
+             refresh=True
+-            while not Detect(.2).isChooseFriend():
++            while not (Detect(.2).isChooseFriend() and not Detect.cache.isBattleContinue()):
++                # wait until the confirm refresh dialog box disappears
++                # The button to confirm refresh is at the same position as continue battle
+                 if Detect.cache.isNoFriend():
+                     schedule.sleep(10)
+                     fgoDevice.device.perform('\xBAK',(500,1000))
