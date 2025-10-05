@@ -41,7 +41,12 @@ if errorlevel 1 (
     pause
     exit
 )
-python ../../FGOPYCustomization/install.py
+cd "%~dp0%.."
+git clone https://github.com/suchandler96/FGOPYCustomization.git
+cd "%~dp0%..\FGOPYCustomization"
+git pull
+cd "%_root%FGO-py\FGO-py"
+python "%~dp0%..\FGOPYCustomization\install.py"
 python fgo.py
 ```
 ## Linux

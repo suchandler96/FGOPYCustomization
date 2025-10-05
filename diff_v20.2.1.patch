@@ -178,7 +178,7 @@ index 03b4a7a..d156622 100644
      def _compare(self,*args,**kwargs):return super()._compare(*args,**kwargs)and fuse.reset(self)
      def _find(self,*args,**kwargs):
 diff --git a/FGO-py/fgoFuse.py b/FGO-py/fgoFuse.py
-index 9e67142..b98ab4a 100644
+index 9e67142..48e10fe 100644
 --- a/FGO-py/fgoFuse.py
 +++ b/FGO-py/fgoFuse.py
 @@ -1,7 +1,7 @@
@@ -202,7 +202,7 @@ index 9e67142..b98ab4a 100644
 -            self.save()
 -            raise ScriptStop('Fused')
 +            if self.tried_press:
-+                self.save(detect.save(name="FuseCheck"))
++                detect.save(name="FuseCheck")
 +                raise ScriptStop('Fused')
 +            else:
 +                self.tried_press = True
