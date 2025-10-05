@@ -37,7 +37,7 @@ index 9b220c5..f026542 100644
  parser_press=ArgParser(prog='press',description=Cmd.do_press.__doc__)
  parser_press.add_argument('button',help='Button',type=str.upper)
 diff --git a/FGO-py/fgoDetect.py b/FGO-py/fgoDetect.py
-index 03b4a7a..2d90957 100644
+index 03b4a7a..d156622 100644
 --- a/FGO-py/fgoDetect.py
 +++ b/FGO-py/fgoDetect.py
 @@ -45,6 +45,9 @@ class XDetectBase(metaclass=logMeta(logger)):
@@ -50,7 +50,15 @@ index 03b4a7a..2d90957 100644
                  return wrap(type(self)(),*args,**kwargs)
              return wrap
          return wrapper
-@@ -165,6 +168,43 @@ class XDetectBase(metaclass=logMeta(logger)):
+@@ -158,13 +161,50 @@ class XDetectBase(metaclass=logMeta(logger)):
+     def getFieldServantHp(self,pos):return self._ocrInt((200+317*pos,620,293+317*pos,644))
+     def getFieldServantNp(self,pos):return self._ocrInt((220+317*pos,655,271+317*pos,680))
+     def getMaterial(self):return(lambda x:{materialImg[i][0]:x.count(i)for i in set(x)-{None}})([self._select(((i[1],None)for i in materialImg),(176+i%7*137,110+i//7*142,253+i%7*137,187+i//7*142),.02)for i in range(1,21)])
+-    def getSkillTargetCount(self):return(lambda x:numpy.bincount(numpy.diff(x))[1]+x[0])(cv2.dilate(numpy.max(cv2.threshold(numpy.max(self._crop((306,320,973,547)),axis=2),67,1,cv2.THRESH_BINARY)[1],axis=0).reshape(1,-1),numpy.ones((1,66),numpy.uint8)).ravel())if self._compare(self.tmpl.CROSS,(1083,139,1113,166))else 0
++    def getSkillTargetCount(self):return(lambda x:numpy.bincount(numpy.diff(x))[1]+x[0])(cv2.dilate(numpy.max(cv2.threshold(numpy.max(self._crop((306,320,973,547)),axis=2),67,1,cv2.THRESH_BINARY)[1],axis=0).reshape(1,-1),numpy.ones((1,66),numpy.uint8)).ravel())if self._compare(self.tmpl.CROSS,(1083,139,1113,166), .15)else 0
+     @retryOnError()
+     @validate()
+     def getStage(self):return self._ocrInt((884,14,902,37))
      @retryOnError()
      @validate()
      def getStageTotal(self):return self._ocrInt((912,13,932,38))
@@ -94,6 +102,15 @@ index 03b4a7a..2d90957 100644
      def getSummonHistory(self):XDetectBase._summonHistory=self._stack(XDetectBase._summonHistory,cv2.threshold(cv2.cvtColor(self._crop((147,157,1105,547)),cv2.COLOR_BGR2GRAY),128,255,cv2.THRESH_BINARY)[1],80)
      @classmethod
      def getSummonHistoryCount(cls):return cls.__new__(cls).inject(XDetectBase._summonHistory)._count((cls.tmpl.SUMMONHISTORY[0][...,0],cls.tmpl.SUMMONHISTORY[1]),(28,0,60,XDetectBase._summonHistory.shape[0]),.7)
+@@ -174,7 +214,7 @@ class XDetectBase(metaclass=logMeta(logger)):
+     def getTeamServantClassRank(self):return[(lambda x:x if x is None else classImg[0][x])(self._select(CLASS[100],(30+200*i+15*(i>2),133,115+200*i+15*(i>2),203)))for i in range(6)]
+     def getWeeklyMission(self):XDetectBase._weeklyMission=self._stack(XDetectBase._weeklyMission,self._crop((603,250,1092,710)),157)
+     def findChapter(self,chapter):return self._find((chapterImg[chapter],None),(640,90,1230,600),.016)
+-    def findFriend(self,img):return self._find(img,(13,166,1233,720),.04)
++    def findFriend(self,img):return self._find(img,(13,166,1233,720),.06)
+     def findMail(self,img):return self._find(img,(73,166,920,720),.016)
+     def findMapCamera(self,chapter):return numpy.array(cv2.minMaxLoc(cv2.matchTemplate(mapImg[chapter],cv2.resize(self._crop((200,200,1080,520)),(0,0),fx=.3,fy=.3,interpolation=cv2.INTER_CUBIC),cv2.TM_SQDIFF_NORMED))[2])/.3+(440,160)
+     @classmethod
 @@ -193,6 +233,56 @@ class XDetectBase(metaclass=logMeta(logger)):
  class XDetectCN(XDetectBase):
      tmpl=IMG_CN
