@@ -178,41 +178,64 @@ index 03b4a7a..d156622 100644
      def _compare(self,*args,**kwargs):return super()._compare(*args,**kwargs)and fuse.reset(self)
      def _find(self,*args,**kwargs):
 diff --git a/FGO-py/fgoFuse.py b/FGO-py/fgoFuse.py
-index 9e67142..48e10fe 100644
+index 9e67142..ac30be0 100644
 --- a/FGO-py/fgoFuse.py
 +++ b/FGO-py/fgoFuse.py
-@@ -1,7 +1,7 @@
+@@ -1,6 +1,9 @@
  from fgoLogging import getLogger
  from fgoSchedule import ScriptStop
  logger=getLogger('Fuse')
--
 +import fgoDevice
++import traceback
++import datetime
+ 
  class Fuse:
      def __init__(self,fv=300,logsize=10):
-         self.value=0
-@@ -9,14 +9,22 @@ class Fuse:
+@@ -9,14 +12,44 @@ class Fuse:
          self.logsize=logsize
          self.log=[None]*logsize
          self.logptr=0
 -    def increase(self):
 +        self.tried_press = False
++        self.tried_handle = False
 +    def increase(self, detect=None):
          logger.debug(f'{self.value}')
          if self.value>self.max:
 -            self.save()
 -            raise ScriptStop('Fused')
-+            if self.tried_press:
-+                detect.save(name="FuseCheck")
++            if self.tried_press and self.tried_handle:
++                detect.save(name="FuseFinal")
++                traceback.print_stack()
 +                raise ScriptStop('Fused')
-+            else:
++            elif not self.tried_press:
 +                self.tried_press = True
-+                import datetime
-+                print(datetime.datetime.now(), "try to avoid fuse")
++                detect.save(name="FuseBeforePress")
++                print(datetime.datetime.now(), "try to avoid fuse with key press")
 +                fgoDevice.device.perform('\x08',(2100,))
++                fgoDevice.device.perform('K',(1000,))
++                fgoDevice.device.perform('J',(1000,))
++            elif self.tried_press and not self.tried_handle:
++                self.tried_handle = True
++                detect.save(name="FuseBeforeHandle")
++                print(datetime.datetime.now(), "try to avoid fuse with key handle")
++                fgoDevice.device.perform('\x08',(2100,))
++                fgoDevice.device.perform('K',(1000,))
++                fgoDevice.device.perform('J',(1000,))
++                # if Detect(.5, .5).isBattleContinue():
++                #     fgoDevice.device.press('K')
++                # elif Detect.cache.isChooseFriend():
++                #     if Detect.cache.isNoFriend():
++                #         fgoDevice.device.perform('\xBAK',(500,1000))
++                #     else:
++                #         fgoDevice.device.touch((640,200))   # select first friend
++                # elif Detect.cache.isSkillCastFailed():
++                #     fgoDevice.device.press('J')
++
          self.value+=1
      def reset(self,detect=None):
          self.value=0
 +        self.tried_press = False
++        self.tried_handle = False
          if detect is not None and detect is not self.log[(self.logptr-1)%self.logsize]:
              self.log[self.logptr]=detect
              self.logptr=(self.logptr+1)%self.logsize
