@@ -1,16 +1,32 @@
 import os, shutil, re
+import argparse
+from tokenizer import generateCustomizedTurn
 
 PATCH_VER = "v20.2.1"
+
+def parse_args():
+    parser = argparse.ArgumentParser(description="Install script for FGO-py customization")
+    parser.add_argument("--install-file", "-f", type=str, help="File used to generate or get already-written customized turn class")
+    return parser.parse_args()
 
 assert os.path.exists("fgoImage"), f"Please run this script ({os.path.abspath(__file__)}) under {os.path.join('FGO-py', 'FGO-py')} directory."
 if not os.path.exists(os.path.join("fgoImage", "slash.png")):
     shutil.copy(os.path.join(os.path.dirname(os.path.abspath(__file__)), "slash.png"), os.path.join("fgoImage", "slash.png"))
 
+args = parse_args()
+if not args.install_file.endswith(".py"):
+    custom_py_file = "generatedCustomTurn.py"
+    with open(custom_py_file, "w", encoding="utf-8") as f:
+        f.write(generateCustomizedTurn(args.install_file))
+    print("Customized turn class generated to generatedCustomTurn.py")
+else:
+    custom_py_file = args.install_file
+
 os.system("cd " + os.path.dirname(os.path.abspath(__file__)) + " && git pull")
 os.system("git reset --hard origin/master")
 os.system("git apply " + os.path.join(os.path.dirname(os.path.abspath(__file__)), f"diff_{PATCH_VER}.patch"))
-if os.path.exists("customizedTurn.py"):
-    with open("customizedTurn.py", encoding="utf-8") as f:
+if os.path.exists(custom_py_file):
+    with open(custom_py_file, encoding="utf-8") as f:
         cus_lines = f.readlines()
     class_name = None
     for line in cus_lines:
@@ -38,3 +54,5 @@ if os.path.exists("customizedTurn.py"):
                     f.write(cl)
             f.write("\n")
             f.writelines(lines[battle_class_line:])
+else:
+    print(f"Customized turn file {custom_py_file} not found! Skipping customized turn installation.")
