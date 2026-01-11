@@ -3,17 +3,21 @@ import argparse
 from tokenizer import generateCustomizedTurn
 
 PATCH_VER = "v20.2.1"
+FGOPY_ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "../FGO-py/"))
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Install script for FGO-py customization")
     parser.add_argument("--install-file", "-f", type=str, help="File used to generate or get already-written customized turn class")
+    parser.add_argument("fgo-py-root-dir", default=FGOPY_ROOT_DIR, type=str, help="Path to FGO-py directory")
     return parser.parse_args()
 
-assert os.path.exists("fgoImage"), f"Please run this script ({os.path.abspath(__file__)}) under {os.path.join('FGO-py', 'FGO-py')} directory."
-if not os.path.exists(os.path.join("fgoImage", "slash.png")):
-    shutil.copy(os.path.join(os.path.dirname(os.path.abspath(__file__)), "slash.png"), os.path.join("fgoImage", "slash.png"))
-
 args = parse_args()
+fgo_py_dir = os.path.join(args.fgo_py_root_dir, "FGO-py")
+slash_png_path = os.path.join(fgo_py_dir, "fgoImage", "slash.png")
+
+if not os.path.exists(slash_png_path):
+    shutil.copy(os.path.join(os.path.dirname(os.path.abspath(__file__)), "slash.png"), slash_png_path)
+
 if not args.install_file.endswith(".py"):
     custom_py_file = "generatedCustomTurn.py"
     with open(custom_py_file, "w", encoding="utf-8") as f:
