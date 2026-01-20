@@ -1,5 +1,5 @@
 import re
-from typing import NamedTuple, Iterator
+from typing import NamedTuple, Iterator, List
 
 FIXED_BASE_INDENT = 8
 
@@ -20,57 +20,259 @@ class SelectCardInfo(NamedTuple):
         return self.target < 0 and len(self.hougu_servants) == 0 and self.pre_eval_str == "" and \
             self.post_eval_str == "" and self.preprogrammed_selectCard == ""
 
-def tokenize(expression: str) -> Iterator[Token]:
-    # 1. Define the token patterns
-    # The order matters! (e.g., match '>=' before '>')
+def tokenize(code: str) -> Iterator[Token]:
     token_specification = [
+        ('COMMENT',  r'#[^\n]*'),             # Comments
         # ('FLOAT',    r'\d+\.\d+'),            # Decimal numbers
         ('INT',      r'\d+'),                 # Integer numbers
-        ('LOGIC',    r'\b(and|or|not)\b'),    # Logic ops (word boundary \b is crucial)
-        ('EXISTS',   r'\bexists\b'),          # exists keyword
+        ('KEYWORDS', r'\b(if|else|elif|and|or|not|exists|x)\b'), # Keywords
         ('COMPARE',  r'>=|<=|==|!='),         # Multi-char comparison
-        ('OP',       r'[<=>]'),               # Single-char comparison
-        ('ID',       r'[a-zA-Z_][a-zA-Z_]*'), # Identifiers (exists, np, varName)
-        ('LPAREN',   r'\('),                  # (
-        ('RPAREN',   r'\)'),                  # )
+        ('OP',       r'[<>]'),                # Single-char comparison
+        ('ID',       r'[a-zA-Z_][a-zA-Z_]*'), # Identifiers
+        ('LPAREN',   r'\('),
+        ('RPAREN',   r'\)'),
         ('STAR',     r'\*'),                  # * (e.g., exists(0.*))
-        ('DOT',      r'\.'),                  # . (for 0.np)
-        ('COMMA',    r','),                   # , (for function args)
-        ('SEMI',     r';'),                   # ; (semicolon)
-        ('COLON',    r':'),                   # : (colon)
-        ('WS',       r'\s+'),                 # Whitespace (to be skipped)
-        ('MISMATCH', r'.'),                   # Any other character (error)
+        ('COLON',    r':'),                   # Colon for blocks
+        ('DOT',      r'\.'),                  # Dot for properties
+        ('COMMA',    r','),
+        ('NEWLINE',  r'\n'),                  # Capture newlines
+        ('SKIP',     r'[ \t]+'),              # Spaces/Tabs (handled manually at start of line)
+        ('MISMATCH', r'.'),                   # Error catch
     ]
 
-    # 2. Compile the regex
-    # Creates one large regex like: (?P<FLOAT>\d+\.\d+)|(?P<INT>\d+)|...
+    # regex compilation
     tok_regex = '|'.join('(?P<%s>%s)' % pair for pair in token_specification)
-    get_token = re.compile(tok_regex, re.IGNORECASE).match
+    get_token = re.compile(tok_regex).match
 
     line_num = 1
     line_start = 0
-    pos = 0
-    mo = get_token(expression)
 
-    # 3. Iterate through matches
-    while mo is not None:
+    # Indentation stack: starts with 0 (root level)
+    indent_stack = [0]
+
+    # This helps us decide if we are at the start of a line
+    at_line_start = True
+
+    pos = 0
+    while pos < len(code):
+        mo = get_token(code, pos)
+        if mo is None:
+            break
+
         kind = mo.lastgroup
         value = mo.group(kind)
+        col = mo.start() - line_start
 
-        if kind == 'WS':
-            # Handle newlines for line counting
-            if '\n' in value:
-                line_num += value.count('\n')
-                line_start = pos + len(value) - value.rfind('\n') - 1
-        elif kind == 'MISMATCH':
-            raise RuntimeError(f'Unexpected character {value!r} on line {line_num}')
-        else:
-            # Calculate column based on current position relative to start of line
-            column = mo.start() - line_start
-            yield Token(kind, value, line_num, column)
+        if kind == 'NEWLINE':
+            at_line_start = True
+            line_start = mo.end()
+            line_num += 1
+            yield Token(kind, '\\n', line_num, col)
+            pos = mo.end()
+            continue
 
+        elif kind == 'SKIP':
+            # If we are not at the start of the line, just ignore whitespace
+            if not at_line_start:
+                pos = mo.end()
+                continue
+
+            # If we ARE at start of line, calculate indentation
+            indent_level = len(value) # Assuming spaces (1 char = 1 unit)
+            # (In a real production parser, you'd handle tabs vs spaces checks here)
+            pos = mo.end()
+
+            # Note: We don't yield yet, we wait to see if the line is empty/comment
+            # But for simplicity in this snippet, we process indentation logic next loop
+            # by keeping `at_line_start` True, but strictly speaking, we need
+            # to peek ahead to ensure it's not an empty line.
+            # Simplified Logic: We will process indentation when we hit the first
+            # non-whitespace token below.
+            continue
+
+        elif kind == 'COMMENT':
+            pos = mo.end()
+            continue
+
+        # --- INDENTATION LOGIC ---
+        if at_line_start:
+            # We hit a real token (not newline/skip/comment)
+            # Calculate column based on where this token actually starts
+            current_indent = col
+
+            if current_indent > indent_stack[-1]:
+                indent_stack.append(current_indent)
+                yield Token('INDENT', '', line_num, 0)
+            elif current_indent < indent_stack[-1]:
+                while current_indent < indent_stack[-1]:
+                    indent_stack.pop()
+                    yield Token('DEDENT', '', line_num, 0)
+                if current_indent != indent_stack[-1]:
+                    raise IndentationError(f"Unindent does not match any outer indentation level at line {line_num}")
+
+            at_line_start = False
+
+        if kind == 'MISMATCH':
+            raise RuntimeError(f'Unexpected char {value!r} at line {line_num}')
+
+        yield Token(kind, value, line_num, col)
         pos = mo.end()
-        mo = get_token(expression, pos)
+
+    # End of file: Deduce remaining indents
+    while len(indent_stack) > 1:
+        indent_stack.pop()
+        yield Token('DEDENT', '', line_num, 0)
+
+
+class SyntaxValidator:
+    def __init__(self, tokens: List[Token]):
+        self.tokens = tokens
+        self.pos = 0
+        # Tracks if an 'if' was seen at a specific indentation level
+        # Key: Indent Level, Value: Boolean (True if an IF is active/pending)
+        self.scope_has_if = {}
+        self.current_indent_level = 0
+
+    def current(self) -> Token:
+        return self.tokens[self.pos] if self.pos < len(self.tokens) else self.tokens[-1]
+
+    def advance(self):
+        self.pos += 1
+
+    def get_pos(self) -> int:
+        return self.pos
+
+    def set_pos(self, pos: int):
+        self.pos = pos
+
+    def peek(self, offset=1) -> Token:
+        idx = self.pos + offset
+        if idx >= len(self.tokens):
+            return self.tokens[-1]
+        elif idx < 0:
+            return self.tokens[0]
+        return self.tokens[idx]
+
+    def validate(self):
+        while self.get_pos() < len(self.tokens):
+            token = self.current()
+
+            if token.type == 'INDENT':
+                self.current_indent_level += 1
+                self.advance()
+
+            elif token.type == 'DEDENT':
+                # When leaving a block, reset the "if" memory for the inner level
+                if self.current_indent_level in self.scope_has_if:
+                    del self.scope_has_if[self.current_indent_level]
+                self.current_indent_level -= 1
+                self.advance()
+
+            elif token.type == 'KEYWORDS' and token.value == 'if':
+                self.handle_if()
+            elif token.type == 'KEYWORDS' and token.value == 'else':
+                self.handle_else()
+            elif token.type == 'KEYWORDS' and token.value == 'elif':
+                self.handle_elif()
+            elif token.type == 'KEYWORDS' and token.value == 'x':
+                self.handle_x()
+            else:
+                # Skip other tokens (expressions, assignments, etc.)
+                self.advance()
+
+    def handle_x(self):
+        """
+        Rule: 'x' must be preceded by 'exists' keyword.
+        """
+        line = self.current().line
+        if not (self.peek(-3).value == 'exists' and self.peek(-2).value == '(' and self.peek(-1).type == 'INT' and
+                self.peek(1).type in {"STAR", "INT"} and self.peek(2).type == "DOT" and self.peek(3).type in {"STAR", "INT"}):
+            raise SyntaxError(f"Line {line}: Syntax of 'x': exists(_count_ x _servant_._color_)")
+
+        self.advance()
+
+    def handle_if(self):
+        """
+        Rule: Check for colon, then check for newline vs inline expression.
+        Also marks this indentation level as having an active 'if'.
+        """
+        line = self.current().line
+        cur_pos = self.get_pos()
+        self.scope_has_if[self.current_indent_level] = True
+
+        # Scan forward to find the colon
+        while self.get_pos() < len(self.tokens) and self.current().type != 'COLON':
+            if self.current().type == 'NEWLINE':
+                raise SyntaxError(f"Line {line}: 'if' statement missing colon before newline.")
+            self.advance()
+        if self.get_pos() >= len(self.tokens) or self.current().type != 'COLON':
+            raise SyntaxError(f"Line {line}: 'if' statement missing colon.")
+
+        self.advance() # consume COLON
+
+        # RULE: "either there should be some expressions in this line or an indent"
+        next_tok = self.current()
+
+        if next_tok.type == 'NEWLINE':
+            # If newline immediately follows colon, next token MUST be INDENT
+            if self.peek().type != 'INDENT':
+                raise SyntaxError(f"Line {line}: Expected 4-space indent after 'if' statement on new line.")
+        else:
+            # Inline expression (e.g., "if x: y = 1")
+            pass
+        self.set_pos(cur_pos + 1)
+
+    def handle_else(self):
+        """
+        Rule: Must be an 'if' at the same indent level immediately before.
+        """
+        line = self.current().line
+
+        # Check if we have a matching IF at this level
+        if not self.scope_has_if.get(self.current_indent_level, False):
+            raise SyntaxError(f"Line {line}: 'else' without matching 'if' at this indentation level.")
+
+        # Reset because the if-else block is essentially consumed/linked now
+        # (Allows 'if... else... if...' chains if needed, though simple else usually ends it)
+        self.scope_has_if[self.current_indent_level] = False
+        self.advance()
+
+    def handle_elif(self):
+        """
+        Rule: Must be an 'if' or 'elif' at the same indent level immediately before.
+              Check for colon, then check for newline vs inline expression.
+        """
+        line = self.current().line
+        cur_pos = self.get_pos()
+        # Check if we have a matching IF or ELIF at this level
+        if not self.scope_has_if.get(self.current_indent_level, False):
+            raise SyntaxError(f"Line {line}: 'elif' without matching 'if' at this indentation level.")
+
+        # Keep the 'if' active for further 'elif' or 'else'
+        self.advance()
+
+        # Scan forward to find the colon
+        while self.get_pos() < len(self.tokens) and self.current().type != 'COLON':
+            if self.current().type == 'NEWLINE':
+                raise SyntaxError(f"Line {line}: 'if' statement missing colon before newline.")
+            self.advance()
+        if self.get_pos() >= len(self.tokens) or self.current().type != 'COLON':
+            raise SyntaxError(f"Line {line}: 'if' statement missing colon.")
+
+        self.advance() # consume COLON
+
+        # RULE: "either there should be some expressions in this line or an indent"
+        next_tok = self.current()
+
+        if next_tok.type == 'NEWLINE':
+            # If newline immediately follows colon, next token MUST be INDENT
+            if self.peek().type != 'INDENT':
+                raise SyntaxError(f"Line {line}: Expected 4-space indent after 'if' statement on new line.")
+        else:
+            # Inline expression
+            pass
+        self.set_pos(cur_pos + 1)
+
 
 def parseActionString(indent: int, action_str: str, class_str: str):
     action_tokens = list(tokenize(action_str))
@@ -196,7 +398,7 @@ def generateCustiomizedSelectCard(s_st_str: str, info: SelectCardInfo, class_str
         # currently have to ignore target since target selection code can't be inserted into a pre-written selectCard function
     post_cards, post_servant_color_combs = _generateColorCombs(info.post_eval_str)
     pre_cards, pre_servant_color_combs = _generateColorCombs(info.pre_eval_str)
-    assert pre_cards + post_cards + len(info.hougu_servants) == 3
+    assert pre_cards + post_cards + len(info.hougu_servants) == 3 or (pre_cards == 0 and post_cards == 0)
     class_str += \
         f'''
     @logit(logger,logging.INFO)
@@ -254,6 +456,16 @@ r'''class GeneratedCustomTurn(CustomTurn):
     cmd_lines = []
     with open(file) as fp:
         raw_cmd_lines = fp.readlines()
+        raw_str = ''.join(raw_cmd_lines)
+
+    try:
+        tokens = list(tokenize(raw_str))
+        validator = SyntaxValidator(tokens)
+        validator.validate()
+
+    except (SyntaxError, IndentationError) as e:
+        print(f"Error: {e}")
+
     for i in range(len(raw_cmd_lines)):
         cmd_line = raw_cmd_lines[i].split('#')[0]
         if len(cmd_line.strip()) > 0:
@@ -267,7 +479,7 @@ r'''class GeneratedCustomTurn(CustomTurn):
             indent = FIXED_BASE_INDENT
             assert turn_start_match.group(1).lower() == 's', \
                 f"At line {line_id + 1}, detected " \
-                f"{turn_start_match.group(1) +turn_start_match.group(2) + turn_start_match.group(3) + turn_start_match.group(4)}, " \
+                f"{turn_start_match.group(1) + turn_start_match.group(2) + turn_start_match.group(3) + turn_start_match.group(4)}, " \
                 "but s*(st*) is expected: (stage * stageTurn *).\n"
             assert turn_start_match.group(3).lower() in {'', 'st'}, "st is expected to indicate stageTurn.\n"
             class_str += ' ' * indent + ("el" if inTurnBranch else "") + "if self.stage==" + turn_start_match.group(2) + \
@@ -293,7 +505,7 @@ r'''class GeneratedCustomTurn(CustomTurn):
                     condition_tokens = list(tokenize(cond_match.group(3)))
                     tok_id = 0
                     while tok_id < len(condition_tokens):
-                        if condition_tokens[tok_id].type == "EXISTS":
+                        if condition_tokens[tok_id].value == "exists":
                             j = tok_id + 1
                             exist_tokid = tok_id
                             servant, card = -1, ""
@@ -344,7 +556,11 @@ r'''class GeneratedCustomTurn(CustomTurn):
                             continue
 
                         tok_id += 1
-            indent = FIXED_BASE_INDENT + 4  # entering the domain of this stage / stageTurn
+            next_line_ind_match = re.search(r"^(\s*).+$", cmd_lines[line_id + 1])
+            if (next_line_ind := len(next_line_ind_match.group(1))) == this_cmd_line_indent:
+                indent = FIXED_BASE_INDENT + 4  # entering the domain of this stage / stageTurn
+            elif next_line_ind < this_cmd_line_indent:
+                raise RuntimeError(f'After "{cmd_line.strip()}", expected the same or more indent in the next line, but found less.\n')
 
         elif cond_match := re.search(r"^(\s*)([elifs]{2,4})\s*(.*):\s*(.*)$", cmd_line):
             condition_tokens = list(tokenize(cond_match.group(3)))
@@ -401,6 +617,6 @@ r'''class GeneratedCustomTurn(CustomTurn):
 
 
 if __name__ == '__main__':
-    out_str = generateCustomizedTurn("WhitePaper90SS.txt")
-    with open("WhitePaper90SS.py", "w", encoding="utf-8") as f:
+    out_str = generateCustomizedTurn("SampleTurnSeq.txt")
+    with open("SampleOutput.py", "w", encoding="utf-8") as f:
         f.write(out_str)
