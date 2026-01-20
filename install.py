@@ -8,7 +8,7 @@ FGOPY_ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__
 def parse_args():
     parser = argparse.ArgumentParser(description="Install script for FGO-py customization")
     parser.add_argument("--install-file", "-f", type=str, help="File used to generate or get already-written customized turn class")
-    parser.add_argument("fgo-py-root-dir", default=FGOPY_ROOT_DIR, type=str, help="Path to FGO-py directory")
+    parser.add_argument("--fgo-py-root-dir", required=False, default=FGOPY_ROOT_DIR, type=str, help="Path to FGO-py directory")
     return parser.parse_args()
 
 args = parse_args()
@@ -40,7 +40,7 @@ if os.path.exists(custom_py_file):
     assert class_name != "Turn", "Your customized turn class should not be named 'Turn'."
     if class_name is not None:
         print(f"Customized Turn class found: {class_name}, adding it to fgoKernel.py...")
-        with open("fgoKernel.py", "r+", encoding="utf-8") as f:
+        with open(os.path.join(fgo_py_dir, "fgoKernel.py"), "r+", encoding="utf-8") as f:
             battle_class_line = 0
             lines = f.readlines()
             for i, line in enumerate(lines):
