@@ -1,0 +1,17 @@
+s1st1:
+0.0, 0.1, 1.1>1, m.0>0
+target:2
+selectCard_for_np 0
+s1st2:
+0.2, 2.0>0, 2.1>0, 2.2>0, 1.2, 1.0>0, m.2>0, 0.0, 0.1
+target:2
+hougu:0
+pre:0.r
+post:0.r
+s2st1:
+0.2
+hougu:0
+post:(0.r, 0.r)
+s2st2:
+hougu:0
+post:(*,*)
