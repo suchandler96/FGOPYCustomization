@@ -37,6 +37,7 @@ def tokenize(expression: str) -> Iterator[Token]:
         ('DOT',      r'\.'),                  # . (for 0.np)
         ('COMMA',    r','),                   # , (for function args)
         ('SEMI',     r';'),                   # ; (semicolon)
+        ('COLON',    r':'),                   # : (colon)
         ('WS',       r'\s+'),                 # Whitespace (to be skipped)
         ('MISMATCH', r'.'),                   # Any other character (error)
     ]
@@ -122,7 +123,7 @@ def parseActionString(indent: int, action_str: str, class_str: str):
     return indent, class_str
 
 
-def generateCustiomizedSelectCard(t_st_str: str, info: SelectCardInfo, class_str: str) -> str:
+def generateCustiomizedSelectCard(s_st_str: str, info: SelectCardInfo, class_str: str) -> str:
     def _generateColorCombs(eval_str: str):     # num_cards, [[(servant, color){1,2}], ...(different priorities)]
         cards = 0
         color_combs = []
@@ -199,7 +200,7 @@ def generateCustiomizedSelectCard(t_st_str: str, info: SelectCardInfo, class_str
     class_str += \
         f'''
     @logit(logger,logging.INFO)
-    def selectCard_{t_st_str}(self):
+    def selectCard_{s_st_str}(self):
 ''' \
 r'''        color,sealed,hougu,np,resist,critical,group=Detect().getCardColor()+[i[5][1]for i in self.servant],Detect.cache.isCardSealed(),Detect.cache.isHouguReady(),[Detect.cache.getFieldServantNp(i)<100 for i in range(3)],[[1,1.7,.6][i]for i in Detect.cache.getCardResist()],[i/10 for i in Detect.cache.getCardCriticalRate()],[next(j for j,k in enumerate(self.servant)if k[0]==i)for i in Detect.cache.getCardServant([i[0] for i in self.servant if i[0]])]+[0,1,2]
         houguTargeted,houguArea,houguSupport=[[j for j in range(3)if hougu[j]and self.servant[j][0]and self.servant[j][5][0]==i]for i in range(3)]
@@ -245,7 +246,7 @@ r'''class GeneratedCustomTurn(CustomTurn):
 '''
     indent = 8
     inTurnBranch = False
-    this_t_st_str = ""
+    this_s_st_str = ""
     this_info = SelectCardInfo(target=-1, hougu_servants=[], pre_eval_str="", post_eval_str="")
     select_card_info_map = {}
     last_cmd_line_indent, this_cmd_line_indent = 0, 0
@@ -262,15 +263,20 @@ r'''class GeneratedCustomTurn(CustomTurn):
         this_cmd_line_indent = len(re.search(r"^(\s*)", cmd_line).group(1))
         indent += (this_cmd_line_indent - last_cmd_line_indent)
 
-        if turn_start_match := re.search(r"^\s*[sS](\d+)([STst]{0,2})(\d*):\s*$", cmd_line):
+        if turn_start_match := re.search(r"^\s*([sStT])+(\d+)([STst]{0,2})(\d*):\s*$", cmd_line):
             indent = FIXED_BASE_INDENT
-            class_str += ' ' * indent + ("el" if inTurnBranch else "") + "if self.stage==" + turn_start_match.group(1) + \
-                         (" and self.stageTurn==" + turn_start_match.group(3) if turn_start_match.group(3) else "") + ":\n"
+            assert turn_start_match.group(1).lower() == 's', \
+                f"At line {line_id + 1}, detected " \
+                f"{turn_start_match.group(1) +turn_start_match.group(2) + turn_start_match.group(3) + turn_start_match.group(4)}, " \
+                "but s*(st*) is expected: (stage * stageTurn *).\n"
+            assert turn_start_match.group(3).lower() in {'', 'st'}, "st is expected to indicate stageTurn.\n"
+            class_str += ' ' * indent + ("el" if inTurnBranch else "") + "if self.stage==" + turn_start_match.group(2) + \
+                         (" and self.stageTurn==" + turn_start_match.group(4) if turn_start_match.group(4) else "") + ":\n"
             inTurnBranch = True
             if not this_info.empty():   # when starting a new turn/stage, save the previous one
-                select_card_info_map[this_t_st_str] = this_info
+                select_card_info_map[this_s_st_str] = this_info
                 this_info = SelectCardInfo(target=-1, hougu_servants=[], pre_eval_str="", post_eval_str="")
-            this_t_st_str = cmd_line.strip().replace(":", "")
+            this_s_st_str = cmd_line.strip().replace(":", "")
             get_card_info_str_inserted = False
             exists_flag_num = 0
             to_replace_toks = {}    # key = (line_id, start_token_id), value = (end, replaced_expr); to replace tokens[key, end)
@@ -331,7 +337,9 @@ r'''class GeneratedCustomTurn(CustomTurn):
                             tok_id = j + 1
                             continue
                         elif condition_tokens[tok_id].value == ".":
-                            to_replace_toks[(line_j, tok_id - 1)] = (tok_id + 2, condition_tokens[tok_id + 1].value + "["+condition_tokens[tok_id - 1].value+"]")
+                            attribute = condition_tokens[tok_id + 1].value
+                            assert attribute in {"np"}
+                            to_replace_toks[(line_j, tok_id - 1)] = (tok_id + 2, attribute + "["+condition_tokens[tok_id - 1].value+"]")
                             tok_id += 2
                             continue
 
@@ -367,7 +375,7 @@ r'''class GeneratedCustomTurn(CustomTurn):
                     hougu_servants.append(int(token.value))
             this_info = this_info._replace(hougu_servants=hougu_servants)
             class_str += ' ' * indent + "fgoDevice.device.perform(' ',(2100,))\n" + \
-                         ' ' * indent + "fgoDevice.device.perform(self.selectCard"+"_"+this_t_st_str+"(),(300,300,2300,1300,6000))\n"
+                         ' ' * indent + "fgoDevice.device.perform(self.selectCard"+"_"+this_s_st_str+"(),(300,300,2300,1300,6000))\n"
         elif pre_eval_match := re.search(r"^\s*pre:(.+)$", cmd_line):
             this_info = this_info._replace(pre_eval_str=pre_eval_match.group(1).strip())
         elif post_eval_match := re.search(r"^\s*post:(.+)$", cmd_line):
@@ -375,20 +383,20 @@ r'''class GeneratedCustomTurn(CustomTurn):
         elif target_match := re.search(r"^\s*target:(\d+)$", cmd_line):
             this_info = this_info._replace(target=int(target_match.group(1)))
         else:
-            if "selectCard" in cmd_line:    # we may need this info apart to guide selectCard generation apart from selectCard calling
+            if "selectCard" in cmd_line:    # we may need this info to guide selectCard generation apart from selectCard calling
                 this_info = this_info._replace(preprogrammed_selectCard=cmd_line.strip())
-            indent, class_str = parseActionString(indent, cmd_line, class_str)
+            indent, class_str = parseActionString(indent, cmd_line.strip(), class_str)
         last_cmd_line_indent = this_cmd_line_indent
 
-    select_card_info_map[this_t_st_str] = this_info     # when the input ends, save the previous stage/turn
+    select_card_info_map[this_s_st_str] = this_info     # when the input ends, save the previous stage/turn
     class_str += '        else:\n' \
                  '            self.dispatchSkill()\n' \
                  '            fgoDevice.device.perform(" ",(2100,))\n' \
                  '            fgoDevice.device.perform(self.selectCard(),(300,300,2300,1300,6000))\n'
 
     # generate selectCard_*() methods
-    for t_st_str, this_info in select_card_info_map.items():
-        class_str = generateCustiomizedSelectCard(t_st_str, this_info, class_str)
+    for s_st_str, this_info in select_card_info_map.items():
+        class_str = generateCustiomizedSelectCard(s_st_str, this_info, class_str)
     return class_str
 
 

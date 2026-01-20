@@ -27,8 +27,8 @@ else:
     custom_py_file = args.install_file
 
 os.system("cd " + os.path.dirname(os.path.abspath(__file__)) + " && git pull")
-os.system("git reset --hard origin/master")
-os.system("git apply " + os.path.join(os.path.dirname(os.path.abspath(__file__)), f"diff_{PATCH_VER}.patch"))
+os.system("cd " + fgo_py_dir + " && git reset --hard origin/master")
+os.system("cd " + fgo_py_dir + " && git apply " + os.path.join(os.path.dirname(os.path.abspath(__file__)), f"diff_{PATCH_VER}.patch"))
 if os.path.exists(custom_py_file):
     with open(custom_py_file, encoding="utf-8") as f:
         cus_lines = f.readlines()

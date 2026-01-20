@@ -1,11 +1,11 @@
-t1st1:
+s1st1:
 if exists(2x0.r) and 0.np>=49:
     0.2>2, 0.0, 0.1>2, M.2>1
 else: selectCard
 target:2
 hougu:2
 post:(2.g,2.b),(2.g,2.*),(2.b, 2.*),(2.b, *)
-t2st1:
+s2st1:
 1.0>2, 1.1>2, 1.2>2
 hougu:2
 pre: 2.r, 2.*
