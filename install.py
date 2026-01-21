@@ -2,7 +2,7 @@ import os, shutil, re
 import argparse
 from tokenizer import generateCustomizedTurn
 
-PATCH_VER = "v20.2.1"
+PATCH_VER = "v21.0.2"
 FGOPY_ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "../FGO-py/"))
 
 def parse_args():
@@ -62,5 +62,14 @@ elif os.path.exists(custom_py_file):
                     f.write(cl)
             f.write("\n")
             f.writelines(lines[battle_class_line:])
+        print(f"Setting {class_name} as the default Turn class of --turnClass command in fgoCli.py...")
+        with open(os.path.join(fgo_py_dir, "fgoCli.py"), "r+", encoding="utf-8") as f:
+            lines = f.readlines()
+            for i, line in enumerate(lines):
+                if "--turnClass" in line:
+                    lines[i] = re.sub(r"default=.*\)", f"default='{class_name}')", line)
+            f.seek(0)
+            f.truncate()
+            f.writelines(lines)
 else:
     print(f"Customized turn file {custom_py_file} not found! Skipping customized turn installation.")
