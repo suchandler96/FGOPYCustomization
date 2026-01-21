@@ -7,7 +7,7 @@ FGOPY_ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Install script for FGO-py customization")
-    parser.add_argument("--install-file", "-f", type=str, help="File used to generate or get already-written customized turn class")
+    parser.add_argument("--install-file", "-f", type=str, default="", help="File used to generate or get already-written customized turn class")
     parser.add_argument("--fgo-py-root-dir", required=False, default=FGOPY_ROOT_DIR, type=str, help="Path to FGO-py directory")
     return parser.parse_args()
 
@@ -18,7 +18,9 @@ slash_png_path = os.path.join(fgo_py_dir, "fgoImage", "slash.png")
 if not os.path.exists(slash_png_path):
     shutil.copy(os.path.join(os.path.dirname(os.path.abspath(__file__)), "slash.png"), slash_png_path)
 
-if not args.install_file.endswith(".py"):
+if args.install_file == "":
+    custom_py_file = ""
+elif not args.install_file.endswith(".py"):
     custom_py_file = "generatedCustomTurn.py"
     with open(custom_py_file, "w", encoding="utf-8") as f:
         f.write(generateCustomizedTurn(args.install_file))
@@ -29,7 +31,9 @@ else:
 os.system("cd " + os.path.dirname(os.path.abspath(__file__)) + " && git pull")
 os.system("cd " + fgo_py_dir + " && git reset --hard origin/master")
 os.system("cd " + fgo_py_dir + " && git apply " + os.path.join(os.path.dirname(os.path.abspath(__file__)), f"diff_{PATCH_VER}.patch"))
-if os.path.exists(custom_py_file):
+if custom_py_file == "":
+    pass
+elif os.path.exists(custom_py_file):
     with open(custom_py_file, encoding="utf-8") as f:
         cus_lines = f.readlines()
     class_name = None
