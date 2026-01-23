@@ -296,7 +296,7 @@ def parseActionString(indent: int, action_str: str, class_str: str):
             assert action_tokens[tok_id + 2].type == "INT"  # skill_id
             skill_id = int(action_tokens[tok_id + 2].value)
             targets = []
-            if action_tokens[tok_id + 3].value == ">":
+            if tok_id + 3 < len(action_tokens) and action_tokens[tok_id + 3].value == ">":
                 if action_tokens[tok_id + 4].type == "INT":
                     targets.append(int(action_tokens[tok_id + 4].value))
                     tok_id += 5
@@ -310,6 +310,8 @@ def parseActionString(indent: int, action_str: str, class_str: str):
                             break
                         j += 1
                     tok_id = j + 1
+            else:
+                tok_id += 3
             class_str += ' ' * indent + f"self.castMasterSkill({skill_id}, " + (f"{targets}" if len(targets) > 0 else "") + ")\n"
         elif "selectCard" in action_tokens[tok_id].value:
             class_str += ' ' * indent + "fgoDevice.device.perform(' ',(2100,))\n" + \
