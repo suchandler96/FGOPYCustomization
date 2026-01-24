@@ -1,3 +1,4 @@
+import os.path
 import re
 from typing import NamedTuple, Iterator, List
 
@@ -430,10 +431,12 @@ r'''        color,sealed,hougu,np,resist,critical,group=Detect().getCardColor()+
     return class_str
 
 def generateCustomizedTurn(file):
+    turn_name = os.path.basename(file)[:file.rfind('.')] + "Turn"
     class_str = \
-r'''class GeneratedCustomTurn(CustomTurn):
+f'''class {turn_name}(CustomTurn):
     def __init__(self):
-        super(GeneratedCustomTurn, self).__init__()
+        super({turn_name}, self).__init__()''' \
+r'''
     def __call__(self,turn):
         self.stage,self.stageTurn=[t:=Detect(.2).getStage(),1+self.stageTurn*(self.stage==t)]
         if turn==1:
