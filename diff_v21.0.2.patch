@@ -15,29 +15,49 @@ index 0fcab30..ecacc16 100644
              self.rotation_watcher.reg_callback(lambda _:self.adjustOffset())
          except Exception as e:
 diff --git a/FGO-py/fgoCli.py b/FGO-py/fgoCli.py
-index bfc8e39..686eabb 100644
+index bfc8e39..3f018a6 100644
 --- a/FGO-py/fgoCli.py
 +++ b/FGO-py/fgoCli.py
-@@ -55,7 +55,7 @@ Some commands support <command> [<subcommand> ...] {{-h, --help}} for further in
+@@ -42,6 +42,17 @@ Some commands support <command> [<subcommand> ...] {{-h, --help}} for further in
+         fgoKernel.schedule.stopOnDefeated(self.config.stopOnDefeated)
+         fgoKernel.schedule.stopOnKizunaReisou(self.config.stopOnKizunaReisou)
+         fgoKernel.Main.teamIndex=self.config.teamIndex
++    def get_real_class_name(self, vague_name):
++        import ast
++        with open("fgoKernel.py", "r", encoding="utf-8") as f:
++            tree = ast.parse(f.read())
++        class_names = [node.name for node in ast.walk(tree) if isinstance(node, ast.ClassDef)]
++        matched_name = ""
++        for name in class_names:
++            if re.search(r"^" + vague_name, name):
++                assert matched_name == "", "the turnClass provided should not match multiple class names\n"
++                matched_name = name
++        return matched_name
+     def emptyline(self):return
+     def precmd(self,line):
+         if line:logger.info(line)
+@@ -55,7 +66,8 @@ Some commands support <command> [<subcommand> ...] {{-h, --help}} for further in
      def do_battle(self,line):
          'Finish the current battle'
          arg=parser_battle.parse_args(line.split())
 -        self.work=fgoKernel.Battle()
-+        self.work=eval(f'lambda:fgoKernel.Battle(fgoKernel.{arg.turnClass})')
++        real_class_name = self.get_real_class_name(arg.turnClass)
++        self.work=eval(f'lambda:fgoKernel.Battle(fgoKernel.{real_class_name})')
          self.do_continue(f'-s {arg.sleep}')
      def do_bench(self,line):
          'Benchmark'
-@@ -154,7 +154,8 @@ Some commands support <command> [<subcommand> ...] {{-h, --help}} for further in
+@@ -154,7 +166,9 @@ Some commands support <command> [<subcommand> ...] {{-h, --help}} for further in
          'Loop for battle until AP empty'
          arg=parser_main.parse_args(line.split())
          fgoKernel.schedule.stopLater(arg.appoint)
 -        self.work=fgoKernel.Operation(arg.quest,arg.appleCount,['gold','silver','bronze','copper','quartz'].index(arg.appleKind))
++        real_class_name = self.get_real_class_name(arg.turnClass)
 +        self.work=fgoKernel.Operation(arg.quest,arg.appleCount,['gold','silver','bronze','copper','quartz'].index(arg.appleKind),
-+                                      battleClass=eval("lambda:fgoKernel.Battle(fgoKernel."+arg.turnClass+")"))
++                                      battleClass=eval("lambda:fgoKernel.Battle(fgoKernel."+real_class_name+")"))
          self.do_continue(f'-s {arg.sleep}')
      def complete_main(self,text,line,begidx,endidx):
          return self.completecommands({
-@@ -261,6 +262,7 @@ class ArgStruct:
+@@ -261,6 +275,7 @@ class ArgStruct:
  
  parser_battle=ArgParser(prog='battle',description=Cmd.do_battle.__doc__)
  parser_battle.add_argument('-s','--sleep',help='Sleep before run (default: %(default)s)',type=validator(str,lambda x:re.match(r'\d+([:.]\d+)*$',x),'timedelta'),default='0')
@@ -45,7 +65,7 @@ index bfc8e39..686eabb 100644
  
  parser_bench=ArgParser(prog='bench',description=Cmd.do_bench.__doc__)
  parser_bench.add_argument('-n','--number',help='Number of runs (default: %(default)s)',type=validator(int,lambda x:x>=3,'not-less-than-3 int'),default=20)
-@@ -285,6 +287,7 @@ parser_main.add_argument('appleKind',help='Apple Kind (default: %(default)s)',ty
+@@ -285,6 +300,7 @@ parser_main.add_argument('appleKind',help='Apple Kind (default: %(default)s)',ty
  parser_main.add_argument('-s','--sleep',help='Sleep before run (default: %(default)s)',type=validator(str,lambda x:re.match(r'\d+([:.]\d+)*$',x),'timedelta'),default='0')
  parser_main.add_argument('-a','--appoint',help='Battle count limit (default: %(default)s for no limit)',type=validator(int,lambda x:x>=0,'nonnegative int'),default=0)
  parser_main.add_argument('-q','--quest',help='Goto different quests for different times',action='append',type=ArgStruct(lambda x:tuple(int(i)for i in x.split('-')),validator(int,lambda x:x>=0,'nonnegative int')),default=[],nargs=2)
