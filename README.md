@@ -1,5 +1,5 @@
 # 项目概览
-本项目为魔改[FGO-py](https://github.com/hgjazhgj/FGO-py)提供了一套框架。我们知道FGO-py使用一套通用逻辑应对所有副本，但在某些场景中可以进一步优化，包括柱子战和容易暴毙的90++副本。而优化的手段则是用户手动指定一套出牌放技能策略，可以是成品作业，在配置不足时也可以模仿玩家自身逻辑选卡补刀、补NP等，从而形成作业和xjbd的结合。
+本项目为魔改[FGO-py](https://github.com/hgjazhgj/FGO-py)提供了一套框架。我们知道FGO-py使用一套通用逻辑应对所有副本，但在某些场景中可以进一步优化，包括柱子战和容易暴毙的90++副本。而优化的手段则是用户手动指定一套出牌放技能策略，可以是成品作业，在配置不足时也可以模仿玩家自身逻辑选卡补刀、补NP等，或是视指令卡情况决定策略，从而形成作业和xjbd的结合。
 
 尽管已经提供了简单明了的安装指导和函数说明，本项目仍需要少量Python基础。
 
@@ -45,8 +45,8 @@ cd "%~dp0%.."
 git clone https://github.com/suchandler96/FGOPYCustomization.git
 cd "%~dp0%..\FGOPYCustomization"
 git pull
+python install.py -f "%_root%FGO-py\FGO-py\customTurn.py"
 cd "%_root%FGO-py\FGO-py"
-python "%~dp0%..\FGOPYCustomization\install.py"
 python fgo.py
 ```
 ## Linux
@@ -61,13 +61,14 @@ python fgo.py
 |   |-- install.py
 |   |-- ...
 ```
-2. `cd FGO-py/FGO-py && python3 ../../FGOPYCustomization/install.py`
+2. 将本项目提供的补丁和定制策略安装到FGO-py项目中：`cd FGOPYCustomization/ && python3 install.py -f ../FGO-py/FGO-py/customTurn.py`。若运行`install.py`时不指定`-f`参数，则不安装定制策略，仅打补丁。每次修改`customTurn.py`、或更换定制策略的文件后都需要重新运行此命令。
+3. 按照自身习惯运行FGO-py的图形界面或CLI。
 
 # 定制策略的详细说明
 1. 继承`class Turn`或`class CustomTurn`（安装后可以在`fgoKernel.py`中看到）实现自己的类，参考本项目中的`NoHouguNoSkillTurn`和`Summer890PPTurn`。核心代码可以直接从`class Turn`复制然后魔改。给这个类起个新名字，并放在`FGO-py/FGO-py/customTurn.py`中（要创建新文件）；
-2. Linux用户请在每次更改`customTurn.py`后执行`python3 install.py`。Windows上这步已经涵盖在更改后的`FGO-py.bat`中了，无需额外操作；
+2. Linux用户请在每次更改`customTurn.py`后执行`python3 install.py -f ../FGO-py/FGO-py/customTurn.py`。Windows上这步已经涵盖在更改后的`FGO-py.bat`中了，无需额外操作；
 3. 注意FGO-py仓库会在执行`install.py`时强制被`git reset --hard`。
-4. 完成上述步骤后，FGO-py运行时会自动调用你实现的类，而非原本的`Turn`类。若想用回原本的`Turn`，请将`customTurn.py`重命名或删除。
+4. 完成上述步骤后，FGO-py运行时会自动调用你实现的类，而非原本的`Turn`类。若想用回原本的`Turn`，请将`customTurn.py`删除或将其内容清空。
 5. `class CustomTurn`中实现了些便利的接口供参考：
    - `selectCard_for_np(self,servant_id)`：选择能使指定从者获得最多NP的卡。`servant_id`从0开始计数；
    - `castSingleOrNoTargetServantSkill(self,pos,skill,target)`：使用从者技能。若涉及单个目标，则`target`为0/1/2，对应场上三名从者；若不需选择目标，则`target`要设为-1。`pos`和`skill`也从0开始计数；
@@ -106,8 +107,24 @@ python fgo.py
 ## 设计目的
 脚本翻译器旨在简化定制`Turn`类时的编程过程：仅使用几个字符即可表示技能释放或选卡操作。用户只需编写一段简单的行动代码，脚本即可自动生成定制的`Turn`类。
 
+## 适用范围与使用方法
+目前只支持在命令行界面（CLI）模式下运行FGO-py时使用该功能。由于Windows上的FGO-py默认以图形界面运行，此处使用Linux运行。这串行动代码需要放在单独的文件中，例如本仓库提供的`SampleTurnSeq.txt`和`WhitePaper90SS.txt`。如果将该文件作为`-f`的参数传给`install.py`，它会自动将其翻译成Python的类并复制到`fgoKernel.py`中。`-f`后可以加0至多个定制逻辑的描述文件，在运行时可以在`main`或`battle`命令后加额外参数选择用哪个逻辑打当前副本。
+
+一般运行FGO-py的CLI是这样操作的：
+```
+$ python fgo.py cli
+> connnect 127.0.0.1:5555
+> 169 invoke
+> main 10 copper -s 10
+```
+若想用脚本翻译器生成的定制逻辑打副本，少许修改`main`命令即可：
+```
+> main 10 copper -s 10 -t <CustomTurnName>
+```
+其中`<CustomTurnName>`是用户提供的txt文件名的前缀，例如`SampleTurnSeq`或`WhitePaper90SS`。但为了方便起见，用户也可以在不引起歧义时只提供开头几个字符，如`-f Sam`或`-f Wh`。如果发现有多个匹配项则会不予安装。
+
 ## 语法
-这串行动代码需要放在单独的文件中，例如本仓库提供的`SampleTurnSeq.txt`和`WhitePaper90SS.txt`。它大致遵循Python风格的if-else语句和缩进规则，支持行内if-else分支，以及可以用`#`注释。如果将该文件作为参数传给`install.py`，它会自动将其翻译成Python的类并复制到`fgoKernel.py`中。
+它大致遵循Python风格的if-else语句和缩进规则（甚至允许嵌套），支持行内if-else分支，以及可以用`#`注释。但不支持循环，因为不需要。
 
 ### 计数约定
 所有数均从0开始计数。例如，从者编号为0、1、2；技能编号为0、1、2。御主技能需以`m`开头。
