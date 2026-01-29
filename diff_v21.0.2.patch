@@ -285,7 +285,7 @@ index 234771d..a39059d 100644
          self.ends=ends
          self.listener=DirListener(path)
 diff --git a/FGO-py/fgoKernel.py b/FGO-py/fgoKernel.py
-index 368b46f..ddec6f8 100644
+index 368b46f..6b1bbbe 100644
 --- a/FGO-py/fgoKernel.py
 +++ b/FGO-py/fgoKernel.py
 @@ -17,10 +17,12 @@
@@ -526,7 +526,7 @@ index 368b46f..ddec6f8 100644
 +        fgoDevice.device.perform('Q'+'WER'[skill],(600,300))
 +        if Detect(.7).isSkillNone():
 +            fgoDevice.device.perform('\x08',(700,))
-+        else:
++        elif t:=Detect.cache.getSkillTargetCount():
 +            try:
 +                if len(targets) == 2:   # exchange servants
 +                    fgoDevice.device.perform(('TYUIOP'[targets[0]],'TYUIOP'[targets[1]],'Z'),(300,300,2600))

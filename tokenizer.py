@@ -313,7 +313,7 @@ def parseActionString(indent: int, action_str: str, class_str: str):
                     tok_id = j + 1
             else:
                 tok_id += 3
-            class_str += ' ' * indent + f"self.castMasterSkill({skill_id}, " + (f"{targets}" if len(targets) > 0 else "") + ")\n"
+            class_str += ' ' * indent + f"self.castMasterSkill({skill_id}, " + (f"{targets}" if len(targets) > 0 else "[]") + ")\n"
         elif "selectCard" in action_tokens[tok_id].value:
             class_str += ' ' * indent + "fgoDevice.device.perform(' ',(2100,))\n" + \
                          ' ' * indent + "fgoDevice.device.perform(self." + action_tokens[tok_id].value + "("
