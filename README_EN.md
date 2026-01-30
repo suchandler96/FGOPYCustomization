@@ -11,7 +11,28 @@ This project works as an example to customize one's [FGO-py](https://github.com/
 
 # Install
 ## Windows
-1. Organize your directories as follows:
+1. Change `FGO-py.bat` as follows (note we launch `install.py`, where the `-f` option can be followed by multiple files for customization. Please put these files under the `FGOPYCustomization` directory. Each of these files will be handled like a python class if it ends with `.py`; otherwise it should follow the conventions in section "Script Translator"). Also note you need to amend this bat file every time you write a new customization file. (Please back up `FGO-py.bat` before you change it):
+```
+@echo off
+title FGO-py
+set "_root=%~dp0"
+set "PATH=%_root%Python311;%_root%Python311\Scripts;%_root%Git\mingw64\bin;%PATH%"
+cd "%_root%FGO-py\FGO-py"
+python ../../deploy/updater.py
+if errorlevel 1 (
+    echo "Update failed. See above."
+    pause
+    exit
+)
+cd "%~dp0"
+git clone https://github.com/suchandler96/FGOPYCustomization.git
+cd "%~dp0%FGOPYCustomization"
+git pull
+python install.py --fgo-py-root-dir "%_root%FGO-py" -f "%_root%FGO-py\FGO-py\customTurn.py"
+cd "%_root%FGO-py\FGO-py"
+python fgo.py
+```
+2. When you run the modified `FGO-py.bat`, it will automatically create a directory `FGOPYCustomization` under `FGO-py.portable`, as the hierarchy shown below:
 ```
 |-- FGO-py.portable\
 |   |-- FGO-py.bat
@@ -25,27 +46,6 @@ This project works as an example to customize one's [FGO-py](https://github.com/
 |   |-- FGOPYCustomization\
 |   |   |-- install.py
 |   |   |-- ...
-```
-2. Change `FGO-py.bat` as follows (note we launch `install.py`, where the `-f` option can be followed by multiple files for customization. Please put these files under the `FGOPYCustomization` directory. Each of these files will be handled like a python class if it ends with `.py`; otherwise it should follow the conventions in section "Script Translator"). Also note you need to amend this bat file every time you write a new customization file. (Please back up `FGO-py.bat` before you change it):
-```
-@echo off
-title FGO-py
-set "_root=%~dp0"
-set "PATH=%_root%Python311;%_root%Python311\Scripts;%_root%Git\mingw64\bin;%PATH%"
-cd "%_root%FGO-py\FGO-py"
-python ../../deploy/updater.py
-if errorlevel 1 (
-    echo "Update failed. See above."
-    pause
-    exit
-)
-cd "%~dp0%.."
-git clone https://github.com/suchandler96/FGOPYCustomization.git
-cd "%~dp0%..\FGOPYCustomization"
-git pull
-python install.py -f "%_root%FGO-py\FGO-py\customTurn.py"
-cd "%_root%FGO-py\FGO-py"
-python fgo.py
 ```
 ## Linux
 1. Organize your directories as follows:
@@ -64,7 +64,7 @@ python fgo.py
 # Detailed usage if you want to customize your own Turn classes
 1. Inherit a class from `class Turn` or `class CustomTurn`(added in the patch file) and implement it with your own strategy (`NoHouguNoSkillTurn` and `Summer890PPTurn` in this repo are two examples). Give your customized Turn class a different name and put it in `FGO-py/FGO-py/customTurn.py` (create a new file);
 2. For linux users, please run `install.py` every time you change `customTurn.py` for the changes to take effect. On Windows, the modified `FGO-py.bat` has already done this for you.
-3. Note the FGO-py repo will be automatically `git reset --hard` in `install.py`;
+3. No matter on Windows or Linux platforms, the FGO-py repo will be automatically `git reset --hard` in `install.py`, after which a patch file and the customized Turn will be installed. So please do backup your files if necessary;
 4. After these steps, when FGO-py runs, it will call your implementation instead of the original `Turn` class. If you want to use the default `Turn` class, you can delete or rename your `customTurn.py` so that `install.py` will not find it.
 5. Some APIs provided in `class CustomTurn`:
    - `selectCard_for_np(self,servant_id)`: select cards such that the specified servant can gain the most NP. `servant_id` starts from 0;

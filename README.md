@@ -13,7 +13,28 @@
 
 # 安装
 ## Windows
-1. 按照以下目录结构组织文件：
+1. 按下修改`FGO-py.bat`（注意调用了`install.py`），并请在修改前备份原文件：
+```
+@echo off
+title FGO-py
+set "_root=%~dp0"
+set "PATH=%_root%Python311;%_root%Python311\Scripts;%_root%Git\mingw64\bin;%PATH%"
+cd "%_root%FGO-py\FGO-py"
+python ../../deploy/updater.py
+if errorlevel 1 (
+    echo "Update failed. See above."
+    pause
+    exit
+)
+cd "%~dp0"
+git clone https://github.com/suchandler96/FGOPYCustomization.git
+cd "%~dp0%FGOPYCustomization"
+git pull
+python install.py --fgo-py-root-dir "%_root%FGO-py" -f "%_root%FGO-py\FGO-py\customTurn.py"
+cd "%_root%FGO-py\FGO-py"
+python fgo.py
+```
+2. 双击运行修改后的`FGO-py.bat`启动FGO-py时会自动在`FGO-py.portable`目录下创建`FGOPYCustomization`目录，如下所示：
 ```
 |-- FGO-py.portable\
 |   |-- FGO-py.bat
@@ -27,27 +48,6 @@
 |   |-- FGOPYCustomization\
 |   |   |-- install.py
 |   |   |-- ...
-```
-2. 按下修改`FGO-py.bat`（注意调用了`install.py`），并请在修改前备份原文件：
-```
-@echo off
-title FGO-py
-set "_root=%~dp0"
-set "PATH=%_root%Python311;%_root%Python311\Scripts;%_root%Git\mingw64\bin;%PATH%"
-cd "%_root%FGO-py\FGO-py"
-python ../../deploy/updater.py
-if errorlevel 1 (
-    echo "Update failed. See above."
-    pause
-    exit
-)
-cd "%~dp0%.."
-git clone https://github.com/suchandler96/FGOPYCustomization.git
-cd "%~dp0%..\FGOPYCustomization"
-git pull
-python install.py -f "%_root%FGO-py\FGO-py\customTurn.py"
-cd "%_root%FGO-py\FGO-py"
-python fgo.py
 ```
 ## Linux
 1. 按照以下目录结构组织文件：
@@ -67,7 +67,7 @@ python fgo.py
 # 定制策略的详细说明
 1. 继承`class Turn`或`class CustomTurn`（安装后可以在`fgoKernel.py`中看到）实现自己的类，参考本项目中的`NoHouguNoSkillTurn`和`Summer890PPTurn`。核心代码可以直接从`class Turn`复制然后魔改。给这个类起个新名字，并放在`FGO-py/FGO-py/customTurn.py`中（要创建新文件）；
 2. Linux用户请在每次更改`customTurn.py`后执行`python3 install.py -f ../FGO-py/FGO-py/customTurn.py`。Windows上这步已经涵盖在更改后的`FGO-py.bat`中了，无需额外操作；
-3. 注意FGO-py仓库会在执行`install.py`时强制被`git reset --hard`。
+3. 不论在Windows还是Linux平台上执行`install.py`时，FGO-py仓库都会先强制被`git reset --hard`重置，而后再安装补丁和定制的行动逻辑。所以如有修改，请在执行前做好备份。
 4. 完成上述步骤后，FGO-py运行时会自动调用你实现的类，而非原本的`Turn`类。若想用回原本的`Turn`，请将`customTurn.py`删除或将其内容清空。
 5. `class CustomTurn`中实现了些便利的接口供参考：
    - `selectCard_for_np(self,servant_id)`：选择能使指定从者获得最多NP的卡。`servant_id`从0开始计数；

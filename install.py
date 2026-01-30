@@ -1,4 +1,4 @@
-import os, shutil, re
+import os, shutil, re, platform
 import argparse
 from tokenizer import generateCustomizedTurn
 
@@ -36,7 +36,7 @@ def main():
         shutil.copy(os.path.join(os.path.dirname(os.path.abspath(__file__)), "slash.png"), os.path.join(fgo_py_dir, "fgoImage"))
 
     os.system("cd " + os.path.dirname(os.path.abspath(__file__)) + " && git pull")
-    os.system("cd " + fgo_py_dir + " && git reset --hard origin/master && git apply " +
+    os.system("cd " + fgo_py_dir + (" && git reset --hard origin/master" if platform.system() != "Windows" else "") + " && git apply " +
               os.path.join(os.path.dirname(os.path.abspath(__file__)), f"diff_{PATCH_VER}.patch"))
 
     valid_files = translate_and_get_valid_files(args.install_files) if args.install_files else []
