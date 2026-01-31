@@ -15,7 +15,7 @@ index 0fcab30..ecacc16 100644
              self.rotation_watcher.reg_callback(lambda _:self.adjustOffset())
          except Exception as e:
 diff --git a/FGO-py/fgoCli.py b/FGO-py/fgoCli.py
-index bfc8e39..3f018a6 100644
+index bfc8e39..79179b2 100644
 --- a/FGO-py/fgoCli.py
 +++ b/FGO-py/fgoCli.py
 @@ -42,6 +42,17 @@ Some commands support <command> [<subcommand> ...] {{-h, --help}} for further in
@@ -46,30 +46,32 @@ index bfc8e39..3f018a6 100644
          self.do_continue(f'-s {arg.sleep}')
      def do_bench(self,line):
          'Benchmark'
-@@ -154,7 +166,9 @@ Some commands support <command> [<subcommand> ...] {{-h, --help}} for further in
+@@ -154,7 +166,10 @@ Some commands support <command> [<subcommand> ...] {{-h, --help}} for further in
          'Loop for battle until AP empty'
          arg=parser_main.parse_args(line.split())
          fgoKernel.schedule.stopLater(arg.appoint)
 -        self.work=fgoKernel.Operation(arg.quest,arg.appleCount,['gold','silver','bronze','copper','quartz'].index(arg.appleKind))
 +        real_class_name = self.get_real_class_name(arg.turnClass)
 +        self.work=fgoKernel.Operation(arg.quest,arg.appleCount,['gold','silver','bronze','copper','quartz'].index(arg.appleKind),
-+                                      battleClass=eval("lambda:fgoKernel.Battle(fgoKernel."+real_class_name+")"))
++                                      battleClass=eval("lambda:fgoKernel.Battle(fgoKernel."+real_class_name+")"),
++                                      wait_for_ap=arg.wait_for_ap)
          self.do_continue(f'-s {arg.sleep}')
      def complete_main(self,text,line,begidx,endidx):
          return self.completecommands({
-@@ -261,6 +275,7 @@ class ArgStruct:
+@@ -261,6 +276,7 @@ class ArgStruct:
  
  parser_battle=ArgParser(prog='battle',description=Cmd.do_battle.__doc__)
  parser_battle.add_argument('-s','--sleep',help='Sleep before run (default: %(default)s)',type=validator(str,lambda x:re.match(r'\d+([:.]\d+)*$',x),'timedelta'),default='0')
-+parser_battle.add_argument('-t','--turnClass',type=str,default="Turn")
++parser_battle.add_argument('-t','--turnClass',type=str,default='Turn')
  
  parser_bench=ArgParser(prog='bench',description=Cmd.do_bench.__doc__)
  parser_bench.add_argument('-n','--number',help='Number of runs (default: %(default)s)',type=validator(int,lambda x:x>=3,'not-less-than-3 int'),default=20)
-@@ -285,6 +300,7 @@ parser_main.add_argument('appleKind',help='Apple Kind (default: %(default)s)',ty
+@@ -285,6 +301,8 @@ parser_main.add_argument('appleKind',help='Apple Kind (default: %(default)s)',ty
  parser_main.add_argument('-s','--sleep',help='Sleep before run (default: %(default)s)',type=validator(str,lambda x:re.match(r'\d+([:.]\d+)*$',x),'timedelta'),default='0')
  parser_main.add_argument('-a','--appoint',help='Battle count limit (default: %(default)s for no limit)',type=validator(int,lambda x:x>=0,'nonnegative int'),default=0)
  parser_main.add_argument('-q','--quest',help='Goto different quests for different times',action='append',type=ArgStruct(lambda x:tuple(int(i)for i in x.split('-')),validator(int,lambda x:x>=0,'nonnegative int')),default=[],nargs=2)
-+parser_main.add_argument('-t','--turnClass',type=str,default="Turn")
++parser_main.add_argument('-t','--turnClass',type=str,default='Turn')
++parser_main.add_argument('-w', '--wait-for-ap', help='Wait for AP refill when AP is insufficient', action='store_true')
  
  parser_press=ArgParser(prog='press',description=Cmd.do_press.__doc__)
  parser_press.add_argument('button',help='Button',type=str.upper)
@@ -285,7 +287,7 @@ index 234771d..a39059d 100644
          self.ends=ends
          self.listener=DirListener(path)
 diff --git a/FGO-py/fgoKernel.py b/FGO-py/fgoKernel.py
-index 368b46f..6b1bbbe 100644
+index 368b46f..c96b4d8 100644
 --- a/FGO-py/fgoKernel.py
 +++ b/FGO-py/fgoKernel.py
 @@ -17,10 +17,12 @@
@@ -553,12 +555,24 @@ index 368b46f..6b1bbbe 100644
  class Battle:
      def __init__(self,turnClass=Turn):
          self.turn=0
-@@ -479,6 +725,20 @@ class Main:
+@@ -450,10 +696,11 @@ class Battle:
+ class Main:
+     teamIndex=0
+     autoFormation=False
+-    def __init__(self,appleTotal=0,appleKind=0,battleClass=Battle):
++    def __init__(self,appleTotal=0,appleKind=0,battleClass=Battle,wait_for_ap=True):
+         self.appleTotal=appleTotal
+         self.appleKind=appleKind
+         self.battleClass=battleClass
++        self.wait_for_ap=wait_for_ap
+     @serialize(mutex)
+     def __call__(self,questIndex=0,battleTotal=None):
+         self.prepare()
+@@ -479,6 +726,19 @@ class Main:
                      if self.battleCount==battleTotal:
                          fgoDevice.device.press('F')
                          return logger.info('Operation Unit Completed')
-+                    wait_for_ap = True      # before confirm to continue, check AP
-+                    if wait_for_ap:
++                    if self.wait_for_ap:
 +                        try:
 +                            ap_to_consume, ap_current, ap_full = Detect(.7,.3).getAP()
 +                            print(datetime.datetime.now(), "AP to consume:", ap_to_consume, "current AP:", ap_current, "full AP:", ap_full)

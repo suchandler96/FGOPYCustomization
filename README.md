@@ -6,7 +6,7 @@
 # 本项目可以做到...
 1. 以特定策略完成活动90++副本，即玩家显式指定每面的出卡放技能策略，并在1回合清不掉最后一面时继续补刀；
 2. 提升异常简单的副本的通关效率（如冬木）；
-3. 循环刷某个副本（如活动90++）: 清空AP，自回体到40AP后继续下一场（本功能默认启用，且暂不提供接口关闭）。
+3. 循环刷某个副本（如活动90++）: 清空AP，如果AP不够进行下一场则在结算界面等待，直到AP恢复到足够之后再继续下一场（本功能在以图形界面启动FGO-py时默认启用，且暂不提供方法关闭；在以CLI运行FGO-py时，仅在运行`main`时附加`--wait-for-ap`命令时会启用该功能）。
 
 # 本项目不能...
 1. 完成玩家都不知如何应对的副本。
@@ -34,7 +34,7 @@ python install.py --fgo-py-root-dir "%_root%FGO-py" -f "%_root%FGO-py\FGO-py\cus
 cd "%_root%FGO-py\FGO-py"
 python fgo.py
 ```
-2. 双击运行修改后的`FGO-py.bat`启动FGO-py时会自动在`FGO-py.portable`目录下创建`FGOPYCustomization`目录，如下所示：
+2. 首次双击运行修改后的`FGO-py.bat`启动FGO-py时会自动在`FGO-py.portable`目录下创建`FGOPYCustomization`目录，如下所示：
 ```
 |-- FGO-py.portable\
 |   |-- FGO-py.bat
@@ -49,6 +49,8 @@ python fgo.py
 |   |   |-- install.py
 |   |   |-- ...
 ```
+3. 往后每次运行都照常双击`FGO-py.bat`即可。
+
 ## Linux
 1. 按照以下目录结构组织文件：
 ```
@@ -61,7 +63,7 @@ python fgo.py
 |   |-- install.py
 |   |-- ...
 ```
-2. 将本项目提供的补丁和定制策略安装到FGO-py项目中：`cd FGOPYCustomization/ && python3 install.py -f ../FGO-py/FGO-py/customTurn.py`。若运行`install.py`时不指定`-f`参数，则不安装定制策略，仅打补丁。每次修改`customTurn.py`、或更换定制策略的文件后都需要重新运行此命令。
+2. 将本项目提供的补丁和定制策略安装到FGO-py项目中：`cd FGOPYCustomization/ && python3 install.py -f ../FGO-py/FGO-py/customTurn.py`。若参考“脚本翻译器”一节，`-f`后也可以是写有定制策略信息的`.txt`文件。若运行`install.py`时不指定`-f`参数，则不安装定制策略，仅打补丁。每次修改`customTurn.py`、或更换定制策略的文件后都需要重新运行此命令。
 3. 按照自身习惯运行FGO-py的图形界面或CLI。
 
 # 定制策略的详细说明

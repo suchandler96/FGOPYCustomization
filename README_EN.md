@@ -47,6 +47,7 @@ python fgo.py
 |   |   |-- install.py
 |   |   |-- ...
 ```
+3. Afterwards, double-click the modified `FGO-py.bat` to run FGO-py as usual.
 ## Linux
 1. Organize your directories as follows:
 ```
@@ -59,7 +60,8 @@ python fgo.py
 |   |-- install.py
 |   |-- ...
 ```
-2. Install the patch files and user-customized Turns into FGO-py: `cd FGOPYCustomization/ && python3 install.py -f ../FGO-py/FGO-py/customTurn.py`. If `install.py` isn't followed by the `-f` option, only the patch files will be installed, and no customized Turns will be installed. You need to run this command every time you change `customTurn.py` or change the customization files.
+2. Install the patch files and user-customized Turns into FGO-py: `cd FGOPYCustomization/ && python3 install.py -f ../FGO-py/FGO-py/customTurn.py`. If you refer to the "Script Translator" Section, you will find `-f` can also be followed with `.txt` files that contain the simplified representation for customized logic. If `install.py` isn't followed by the `-f` option, only the patch files will be installed, and no customized Turns will be installed. You need to run this command every time you change `customTurn.py` or change the customization files.
+3. Run FGO-py in GUI or CLI mode as usual.
 
 # Detailed usage if you want to customize your own Turn classes
 1. Inherit a class from `class Turn` or `class CustomTurn`(added in the patch file) and implement it with your own strategy (`NoHouguNoSkillTurn` and `Summer890PPTurn` in this repo are two examples). Give your customized Turn class a different name and put it in `FGO-py/FGO-py/customTurn.py` (create a new file);
