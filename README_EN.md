@@ -124,7 +124,7 @@ If the script translator is to be used, slightly amending the `main` command wou
 where `<CustomTurnName>` is the prefix of the txt files that the user provides, e.g., `SampleTurnSeq` and `WhitePaper90SS`. For convenience, users can provide only several leading characters (e.g., `-f Sam`, or `-f Wh`) if there is no ambiguity. If there are multiple matches, the files won't be installed.
 
 ## Grammar
-It roughly follows python-style if-else sequence and indent rules, in-line if-else branches (and even nested branches), and supports `#`-style comments. Loops are not supported as they are not needed.
+It roughly follows python-style if-else sequence and indent rules (and even nested branches), `if a: b` branches within a line, and supports `#`-style comments. Loops are not supported as they are not needed. Statements like `a = b if c else d` within a line are not supported for now, but may be supported in the future.
 
 ### Numbering Conventions
 All numbers start from 0. For instance, servants are numbered 0, 1, 2; skills are numbered 0, 1, 2. Master skills should start with `m`.
@@ -144,6 +144,9 @@ All numbers start from 0. For instance, servants are numbered 0, 1, 2; skills ar
 7. `hougu`: Specify the servant IDs that will use hougu this turn. Connect with `,` if multiple hougu are to be used.
 8. `pre` & `post`: Specify the expected sequences of cards before (pre) and after (post) releasing hougu, from the highest priority to the lowest.
 9. `sX`, `sXstY` (X & Y are numbers, and can be changed as you wish): Indicate that the following actions and configs are for stage X stageTurn Y.
+
+### Other Conventions
+1. `hougu`, `pre`, `post` that specify card selection within the same turn should not be placed in different code blocks, e.g., different branches of an `if...elif...else` statement. Otherwise, multiple strategies (`selectCard_xxx` function) will be generated.
 
 ### Examples:
 1. `exists(2.b)`: There is an Arts card of the rightmost servant.

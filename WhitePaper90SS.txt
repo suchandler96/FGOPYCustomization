@@ -13,5 +13,13 @@ s2st1:
 hougu:0
 post:(0.r, 0.r)
 s2st2:
-hougu:0
-post:(*,*)
+if exists(2x0.*):
+    pre:(0.*, 0.*)
+    hougu:0
+elif exists(0.*):
+    pre:0.*
+    hougu:0
+    post:*
+else:
+    hougu:0
+    post:(*,*)

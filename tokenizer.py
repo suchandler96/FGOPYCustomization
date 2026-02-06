@@ -401,7 +401,10 @@ def generateCustiomizedSelectCard(s_st_str: str, info: SelectCardInfo, class_str
         # currently have to ignore target since target selection code can't be inserted into a pre-written selectCard function
     post_cards, post_servant_color_combs = _generateColorCombs(info.post_eval_str)
     pre_cards, pre_servant_color_combs = _generateColorCombs(info.pre_eval_str)
-    assert pre_cards + post_cards + len(info.hougu_servants) == 3 or (pre_cards == 0 and post_cards == 0)
+    assert pre_cards + post_cards + len(info.hougu_servants) == 3 or (pre_cards == 0 and post_cards == 0), \
+        "Total selected cards (pre + hougu + post) must be 3. If only hougu is specified while pre and post are not, " \
+        "random cards after casting hougu will be selected. It's illegal if non of these two circumstances are met.\n\n" \
+        f"Detected: pre={info.pre_eval_str}, post={info.post_eval_str} hougu_servants={info.hougu_servants}"
     class_str += \
         f'''
     @logit(logger,logging.INFO)
@@ -491,9 +494,10 @@ r'''
                          (" and self.stageTurn==" + turn_start_match.group(4) if turn_start_match.group(4) else "") + ":\n"
             inTurnBranch = True
             if not this_info.empty():   # when starting a new turn/stage, save the previous one
-                select_card_info_map[this_s_st_str] = this_info
+                select_card_info_map[this_s_st_str + "_" + str(select_card_id_for_this_s_st)] = this_info
                 this_info = SelectCardInfo(target=-1, hougu_servants=[], pre_eval_str="", post_eval_str="")
             this_s_st_str = cmd_line.strip().replace(":", "")
+            select_card_id_for_this_s_st = 0
             get_card_info_str_inserted = False
             exists_flag_num = 0
             to_replace_toks = {}    # key = (line_id, start_token_id), value = (end, replaced_expr); to replace tokens[key, end)
@@ -568,9 +572,18 @@ r'''
                 raise RuntimeError(f'After "{cmd_line.strip()}", expected the same or more indent in the next line, but found less.\n')
 
         elif cond_match := re.search(r"^(\s*)([elifs]{2,4})\s*(.*):\s*(.*)$", cmd_line):
+            cond_keyword = cond_match.group(2)
+            if (cond_keyword == "else" or cond_keyword == "elif") and not this_info.empty():
+                # If this_info is non-empty when encountering "else" or "elif",
+                # we assume the user has finished specifying the previous selectCard info.
+                # the calling of selectCard_xxx() has been inserted when parsing "hougu"
+                select_card_info_map[this_s_st_str + "_" + str(select_card_id_for_this_s_st)] = this_info
+                this_info = SelectCardInfo(target=-1, hougu_servants=[], pre_eval_str="", post_eval_str="")
+                select_card_id_for_this_s_st += 1
+
             condition_tokens = list(tokenize(cond_match.group(3)))
             # print the conditional expression
-            class_str += ' ' * indent + cond_match.group(2)
+            class_str += ' ' * indent + cond_keyword
             tok_id = 0
             while tok_id < len(condition_tokens):
                 if (line_id, tok_id) in to_replace_toks:
@@ -596,7 +609,8 @@ r'''
                     hougu_servants.append(int(token.value))
             this_info = this_info._replace(hougu_servants=hougu_servants)
             class_str += ' ' * indent + "fgoDevice.device.perform(' ',(2100,))\n" + \
-                         ' ' * indent + "fgoDevice.device.perform(self.selectCard"+"_"+this_s_st_str+"(),(300,300,2300,1300,6000))\n"
+                         ' ' * indent + "fgoDevice.device.perform(self.selectCard"+"_"+this_s_st_str+"_"+ \
+                         str(select_card_id_for_this_s_st)+"(),(300,300,2300,1300,6000))\n"
         elif pre_eval_match := re.search(r"^\s*pre:(.+)$", cmd_line):
             this_info = this_info._replace(pre_eval_str=pre_eval_match.group(1).strip())
         elif post_eval_match := re.search(r"^\s*post:(.+)$", cmd_line):
@@ -609,7 +623,9 @@ r'''
             indent, class_str = parseActionString(indent, cmd_line.strip(), class_str)
         last_cmd_line_indent = this_cmd_line_indent
 
-    select_card_info_map[this_s_st_str] = this_info     # when the input ends, save the previous stage/turn
+    if not this_info.empty():
+        # when the input ends, save the previous stage/turn
+        select_card_info_map[this_s_st_str + "_" + str(select_card_id_for_this_s_st)] = this_info
     class_str += '        else:\n' \
                  '            self.dispatchSkill()\n' \
                  '            fgoDevice.device.perform(" ",(2100,))\n' \

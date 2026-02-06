@@ -101,7 +101,7 @@ python fgo.py
 2. 删除`FGOPYCustomization`目录。
 
 # `FGO-py/FGO-py/fgoKernel.py`中部分变量的个人理解
-1. class Turn -> self.servant: `list[int]`，每个元素对应从者ID，如玛修=1； 
+1. class Turn -> self.servant: `list[int]`，每个元素对应从者ID，如玛修=1；
 2. class Turn -> color: `list[int]`，每个元素对应指令卡颜色。0：Arts，1：Quick，2：Buster；
 3. class Turn -> group: `list[int]`，每个元素对应场上8张指令卡（5发牌+3宝具）的所属从者站位。它必定由0、1、2组成且长度固定为8。
 
@@ -126,7 +126,7 @@ $ python fgo.py cli
 其中`<CustomTurnName>`是用户提供的txt文件名的前缀，例如`SampleTurnSeq`或`WhitePaper90SS`。但为了方便起见，用户也可以在不引起歧义时只提供开头几个字符，如`-f Sam`或`-f Wh`。如果发现有多个匹配项则会不予安装。
 
 ## 语法
-它大致遵循Python风格的if-else语句和缩进规则（甚至允许嵌套），支持行内if-else分支，以及可以用`#`注释。但不支持循环，因为不需要。
+它大致遵循Python风格的if-else语句和缩进规则（甚至允许嵌套），支持单行的`if a: b`语句，以及可以用`#`注释。但不支持循环，因为不需要。对于单行内的`a = b if c else d`语句暂不支持，但可能日后会支持。
 
 ### 计数约定
 所有数均从0开始计数。例如，从者编号为0、1、2；技能编号为0、1、2。御主技能需以`m`开头。
@@ -146,6 +146,9 @@ $ python fgo.py cli
 7. `hougu`：指定本回合要使用宝具的从者ID。若有多名从者要放宝具，他们的ID之间用逗号连接。
 8. `pre` & `post`：指定在使用宝具之前和之后要选取的指令卡。用户可以输入多种期望选取的指令卡组合，组合与组合之间用逗号连接，优先级从高到低。
 9. `sX`, `sXstY`（X & Y是数字，用户可自行更改）：表示从这里往下的行动和配置信息都是针对第X面（stage）、该面的第Y回合（stageTurn）的。
+
+### 其他约定
+1. 用于指定同一回合内选卡的`hougu`, `pre`, `post`不能跨代码块，例如必须在同一个`if...elif...else`语句块内。否则会生成多套策略（多个`selectCard_xxx`函数）。
 
 ### 示例
 1. `exists(2.b)`: 存在2号（最右侧）从者的蓝卡。
