@@ -15,7 +15,7 @@ index 0fcab30..ecacc16 100644
              self.rotation_watcher.reg_callback(lambda _:self.adjustOffset())
          except Exception as e:
 diff --git a/FGO-py/fgoCli.py b/FGO-py/fgoCli.py
-index bfc8e39..79179b2 100644
+index bfc8e39..7681bde 100644
 --- a/FGO-py/fgoCli.py
 +++ b/FGO-py/fgoCli.py
 @@ -42,6 +42,17 @@ Some commands support <command> [<subcommand> ...] {{-h, --help}} for further in
@@ -36,7 +36,21 @@ index bfc8e39..79179b2 100644
      def emptyline(self):return
      def precmd(self,line):
          if line:logger.info(line)
-@@ -55,7 +66,8 @@ Some commands support <command> [<subcommand> ...] {{-h, --help}} for further in
+@@ -49,13 +60,22 @@ Some commands support <command> [<subcommand> ...] {{-h, --help}} for further in
+         return line
+     def postcmd(self,stop,line):
+         if not stop and line:logger.info(f'Done in {time.time()-self.time:.3f}s')
++        # Auto-reconnect to 127.0.0.1:5555 if disconnected
++        # if not fgoDevice.device.available and self.config.device == '127.0.0.1:5555':
++        if not fgoDevice.device.available:
++            try:
++                fgoDevice.device=fgoDevice.Device(self.config.device)
++                logger.warning(f'Auto-reconnected to {self.config.device}')
++            except Exception:
++                pass
+         return stop
+     def completenames(self,text,*ignored):return[f'{i} 'for i in super().completenames(text,*ignored)]
+     def completecommands(self,table,text,line,begidx,endidx):return sum([[f'{k} 'for k in j if k.startswith(text)]for i,j in table.items()if re.match(f'{i}$',' '.join(line.split()[1:None if begidx==endidx else -1]))],[])
      def do_battle(self,line):
          'Finish the current battle'
          arg=parser_battle.parse_args(line.split())
@@ -46,7 +60,7 @@ index bfc8e39..79179b2 100644
          self.do_continue(f'-s {arg.sleep}')
      def do_bench(self,line):
          'Benchmark'
-@@ -154,7 +166,10 @@ Some commands support <command> [<subcommand> ...] {{-h, --help}} for further in
+@@ -154,7 +174,10 @@ Some commands support <command> [<subcommand> ...] {{-h, --help}} for further in
          'Loop for battle until AP empty'
          arg=parser_main.parse_args(line.split())
          fgoKernel.schedule.stopLater(arg.appoint)
@@ -58,7 +72,7 @@ index bfc8e39..79179b2 100644
          self.do_continue(f'-s {arg.sleep}')
      def complete_main(self,text,line,begidx,endidx):
          return self.completecommands({
-@@ -261,6 +276,7 @@ class ArgStruct:
+@@ -261,6 +284,7 @@ class ArgStruct:
  
  parser_battle=ArgParser(prog='battle',description=Cmd.do_battle.__doc__)
  parser_battle.add_argument('-s','--sleep',help='Sleep before run (default: %(default)s)',type=validator(str,lambda x:re.match(r'\d+([:.]\d+)*$',x),'timedelta'),default='0')
@@ -66,7 +80,7 @@ index bfc8e39..79179b2 100644
  
  parser_bench=ArgParser(prog='bench',description=Cmd.do_bench.__doc__)
  parser_bench.add_argument('-n','--number',help='Number of runs (default: %(default)s)',type=validator(int,lambda x:x>=3,'not-less-than-3 int'),default=20)
-@@ -285,6 +301,8 @@ parser_main.add_argument('appleKind',help='Apple Kind (default: %(default)s)',ty
+@@ -285,6 +309,8 @@ parser_main.add_argument('appleKind',help='Apple Kind (default: %(default)s)',ty
  parser_main.add_argument('-s','--sleep',help='Sleep before run (default: %(default)s)',type=validator(str,lambda x:re.match(r'\d+([:.]\d+)*$',x),'timedelta'),default='0')
  parser_main.add_argument('-a','--appoint',help='Battle count limit (default: %(default)s for no limit)',type=validator(int,lambda x:x>=0,'nonnegative int'),default=0)
  parser_main.add_argument('-q','--quest',help='Goto different quests for different times',action='append',type=ArgStruct(lambda x:tuple(int(i)for i in x.split('-')),validator(int,lambda x:x>=0,'nonnegative int')),default=[],nargs=2)
