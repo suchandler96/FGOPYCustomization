@@ -273,6 +273,26 @@ index 9e67142..38195b1 100644
          if detect is not None and detect is not self.log[(self.logptr-1)%self.logsize]:
              self.log[self.logptr]=detect
              self.logptr=(self.logptr+1)%self.logsize
+diff --git a/FGO-py/fgoGui.py b/FGO-py/fgoGui.py
+index 5a044e9..6cf0fe1 100644
+--- a/FGO-py/fgoGui.py
++++ b/FGO-py/fgoGui.py
+@@ -49,6 +49,7 @@ class MainWindow(QMainWindow,Ui_fgoMainWindow):
+             (False,self.CKB_TEAM,lambda x:setattr(fgoKernel.Main,'autoFormation',x)),
+             ('stopOnDefeated',self.MENU_SETTINGS_DEFEATED,fgoKernel.schedule.stopOnDefeated),
+             ('stopOnKizunaReisou',self.MENU_SETTINGS_KIZUNAREISOU,fgoKernel.schedule.stopOnKizunaReisou),
++            (False,self.MENU_SETTINGS_WAITFORAP,None),
+             ('closeToTray',self.MENU_CONTROL_TRAY,None),
+             ('stayOnTop',self.MENU_CONTROL_STAYONTOP,lambda x:(self.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint,x),self.show())),
+             ('notifyEnable',self.MENU_CONTROL_NOTIFY,None),
+@@ -180,6 +181,7 @@ class MainWindow(QMainWindow,Ui_fgoMainWindow):
+         self.MENU_CONTROL_MAPKEY.setChecked(False)
+     def runMain(self):
+         self.operation.battleClass=fgoKernel.Battle
++        self.operation.wait_for_ap=self.config.get(False, False)
+         self.runFunc(self.operation)
+     def runBattle(self):self.runFunc(fgoKernel.Battle())
+     def runClassic(self):
 diff --git a/FGO-py/fgoImageListener.py b/FGO-py/fgoImageListener.py
 index 234771d..a39059d 100644
 --- a/FGO-py/fgoImageListener.py
@@ -608,3 +628,33 @@ index 368b46f..c96b4d8 100644
                  if Detect.cache.isNoFriend():
                      schedule.sleep(10)
                      fgoDevice.device.perform('\xBAK',(500,1000))
+diff --git a/FGO-py/fgoMainWindow.py b/FGO-py/fgoMainWindow.py
+index 98deec9..3d5949f 100644
+--- a/FGO-py/fgoMainWindow.py
++++ b/FGO-py/fgoMainWindow.py
+@@ -63,6 +63,9 @@ class Ui_fgoMainWindow(object):
+         self.MENU_SETTINGS_SPECIALDROP = QAction(fgoMainWindow)
+         self.MENU_SETTINGS_SPECIALDROP.setObjectName(u"MENU_SETTINGS_SPECIALDROP")
+         self.MENU_SETTINGS_SPECIALDROP.setCheckable(True)
++        self.MENU_SETTINGS_WAITFORAP = QAction(fgoMainWindow)
++        self.MENU_SETTINGS_WAITFORAP.setObjectName(u"MENU_SETTINGS_WAITFORAP")
++        self.MENU_SETTINGS_WAITFORAP.setCheckable(True)
+         self.MENU_ABOUT_LICENSE = QAction(fgoMainWindow)
+         self.MENU_ABOUT_LICENSE.setObjectName(u"MENU_ABOUT_LICENSE")
+         self.MENU_FILE_QUIT = QAction(fgoMainWindow)
+@@ -403,6 +406,7 @@ class Ui_fgoMainWindow(object):
+         self.MENU_SETTINGS.addAction(self.MENU_SETTINGS_DEFEATED)
+         self.MENU_SETTINGS.addAction(self.MENU_SETTINGS_KIZUNAREISOU)
+         self.MENU_SETTINGS.addAction(self.MENU_SETTINGS_SPECIALDROP)
++        self.MENU_SETTINGS.addAction(self.MENU_SETTINGS_WAITFORAP)
+ 
+         self.retranslateUi(fgoMainWindow)
+         self.BTN_CLASSIC.clicked.connect(fgoMainWindow.runClassic)
+@@ -469,6 +473,7 @@ class Ui_fgoMainWindow(object):
+         self.MENU_SETTINGS_DEFEATED.setText(QCoreApplication.translate("fgoMainWindow", u"\u6218\u8d25\u64a4\u9000\u65f6\u7ec8\u6b62\u6218\u6597", None))
+         self.MENU_SETTINGS_KIZUNAREISOU.setText(QCoreApplication.translate("fgoMainWindow", u"\u83b7\u5f97\u7f81\u7eca\u793c\u88c5\u65f6\u7ec8\u6b62\u6218\u6597", None))
+         self.MENU_SETTINGS_SPECIALDROP.setText(QCoreApplication.translate("fgoMainWindow", u"\u82e5\u5e72\u7279\u6b8a\u6389\u843d\u540e\u7ec8\u6b62\u6218\u6597", None))
++        self.MENU_SETTINGS_WAITFORAP.setText(QCoreApplication.translate("fgoMainWindow", u"Wait when AP is insufficient", None))
+         self.MENU_ABOUT_LICENSE.setText(QCoreApplication.translate("fgoMainWindow", u"\u4f7f\u7528\u8bb8\u53ef", None))
+         self.MENU_FILE_QUIT.setText(QCoreApplication.translate("fgoMainWindow", u"\u9000\u51fa", None))
+         self.MENU_CONTROL_TRAY.setText(QCoreApplication.translate("fgoMainWindow", u"\u5173\u95ed\u5230\u6258\u76d8", None))
