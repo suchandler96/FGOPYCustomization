@@ -164,7 +164,7 @@ def tokenize(code: str) -> Iterator[Token]:
 
         elif kind == 'ID' and not re.search(r"^selectCard", value):
             # Apart from selectCardxxx, only accepts the following as IDs
-            if value not in {"np"}:
+            if value not in {"np", "resist", "critical", "ehp", "shp"}:
                 raise RuntimeError(f'Unexpected token {value!r} at line {line_num}')
 
         # --- INDENTATION LOGIC ---
@@ -465,7 +465,8 @@ r'''
                 self.countDown[0][i]=[0,0,0]
         logger.info(f'Turn {turn} Stage {self.stage} StageTurn {self.stageTurn} {[i[0]for i in self.servant]}')
         if self.stageTurn==1:Detect.cache.setupEnemyGird()
-        self.enemy=[Detect.cache.getEnemyHp(i)for i in range(6)]
+        self.enemy=ehp=[Detect.cache.getEnemyHp(i)for i in range(6)]
+        shp=self.getServantHP()
 '''
 
     def parseActionString(self, action_tok_st, action_tok_ed) -> str:
@@ -733,7 +734,6 @@ r'''        color,sealed,hougu,np,resist,critical,group=Detect().getCardColor()+
                                 continue
                             elif self.tokens[try_tok_id].type == DOT:
                                 attribute = self.tokens[try_tok_id + 1].value
-                                assert attribute in {"np"}  # todo: should check this in Validator
                                 to_replace_toks[try_tok_id - 1] = (try_tok_id + 2, f"{attribute}[{self.tokens[try_tok_id - 1].value}]")
                                 try_tok_id += 2
                                 continue
