@@ -15,7 +15,7 @@ index 0fcab30..ecacc16 100644
              self.rotation_watcher.reg_callback(lambda _:self.adjustOffset())
          except Exception as e:
 diff --git a/FGO-py/fgoCli.py b/FGO-py/fgoCli.py
-index bfc8e39..0812691 100644
+index bfc8e39..601897c 100644
 --- a/FGO-py/fgoCli.py
 +++ b/FGO-py/fgoCli.py
 @@ -42,6 +42,17 @@ Some commands support <command> [<subcommand> ...] {{-h, --help}} for further in
@@ -36,7 +36,20 @@ index bfc8e39..0812691 100644
      def emptyline(self):return
      def precmd(self,line):
          if line:logger.info(line)
-@@ -55,7 +66,8 @@ Some commands support <command> [<subcommand> ...] {{-h, --help}} for further in
+@@ -49,13 +60,21 @@ Some commands support <command> [<subcommand> ...] {{-h, --help}} for further in
+         return line
+     def postcmd(self,stop,line):
+         if not stop and line:logger.info(f'Done in {time.time()-self.time:.3f}s')
++        # Auto-reconnect to the last connected device if disconnected
++        if not fgoDevice.device.available and self.config.device:
++            try:
++                fgoDevice.device=fgoDevice.Device(self.config.device)
++                logger.warning(f'Auto-reconnected to {self.config.device}')
++            except Exception:
++                pass
+         return stop
+     def completenames(self,text,*ignored):return[f'{i} 'for i in super().completenames(text,*ignored)]
+     def completecommands(self,table,text,line,begidx,endidx):return sum([[f'{k} 'for k in j if k.startswith(text)]for i,j in table.items()if re.match(f'{i}$',' '.join(line.split()[1:None if begidx==endidx else -1]))],[])
      def do_battle(self,line):
          'Finish the current battle'
          arg=parser_battle.parse_args(line.split())
@@ -46,7 +59,7 @@ index bfc8e39..0812691 100644
          self.do_continue(f'-s {arg.sleep}')
      def do_bench(self,line):
          'Benchmark'
-@@ -154,7 +166,10 @@ Some commands support <command> [<subcommand> ...] {{-h, --help}} for further in
+@@ -154,7 +173,10 @@ Some commands support <command> [<subcommand> ...] {{-h, --help}} for further in
          'Loop for battle until AP empty'
          arg=parser_main.parse_args(line.split())
          fgoKernel.schedule.stopLater(arg.appoint)
@@ -58,7 +71,7 @@ index bfc8e39..0812691 100644
          self.do_continue(f'-s {arg.sleep}')
      def complete_main(self,text,line,begidx,endidx):
          return self.completecommands({
-@@ -235,6 +250,8 @@ Some commands support <command> [<subcommand> ...] {{-h, --help}} for further in
+@@ -235,6 +257,8 @@ Some commands support <command> [<subcommand> ...] {{-h, --help}} for further in
          'Adapt none 16:9 screen'
          arg=parser_169.parse_args(line.split())
          assert fgoDevice.device.available
@@ -67,7 +80,7 @@ index bfc8e39..0812691 100644
          getattr(fgoDevice.device,f'{arg.action}169')()
      def complete_169(self,text,line,begidx,endidx):
          return self.completecommands({
-@@ -261,6 +278,7 @@ class ArgStruct:
+@@ -261,6 +285,7 @@ class ArgStruct:
  
  parser_battle=ArgParser(prog='battle',description=Cmd.do_battle.__doc__)
  parser_battle.add_argument('-s','--sleep',help='Sleep before run (default: %(default)s)',type=validator(str,lambda x:re.match(r'\d+([:.]\d+)*$',x),'timedelta'),default='0')
@@ -75,7 +88,7 @@ index bfc8e39..0812691 100644
  
  parser_bench=ArgParser(prog='bench',description=Cmd.do_bench.__doc__)
  parser_bench.add_argument('-n','--number',help='Number of runs (default: %(default)s)',type=validator(int,lambda x:x>=3,'not-less-than-3 int'),default=20)
-@@ -285,6 +303,8 @@ parser_main.add_argument('appleKind',help='Apple Kind (default: %(default)s)',ty
+@@ -285,6 +310,8 @@ parser_main.add_argument('appleKind',help='Apple Kind (default: %(default)s)',ty
  parser_main.add_argument('-s','--sleep',help='Sleep before run (default: %(default)s)',type=validator(str,lambda x:re.match(r'\d+([:.]\d+)*$',x),'timedelta'),default='0')
  parser_main.add_argument('-a','--appoint',help='Battle count limit (default: %(default)s for no limit)',type=validator(int,lambda x:x>=0,'nonnegative int'),default=0)
  parser_main.add_argument('-q','--quest',help='Goto different quests for different times',action='append',type=ArgStruct(lambda x:tuple(int(i)for i in x.split('-')),validator(int,lambda x:x>=0,'nonnegative int')),default=[],nargs=2)
@@ -84,7 +97,7 @@ index bfc8e39..0812691 100644
  
  parser_press=ArgParser(prog='press',description=Cmd.do_press.__doc__)
  parser_press.add_argument('button',help='Button',type=str.upper)
-@@ -317,6 +337,6 @@ parser_teamup_set_servant.add_argument('pos',help='Servant # (1-6)',type=int,cho
+@@ -317,6 +344,6 @@ parser_teamup_set_servant.add_argument('pos',help='Servant # (1-6)',type=int,cho
  parser_teamup_set_servant.add_argument('value',help='Info value (e.g. 1007-xxxx-1007-2x, add hyphens(-) anywhere as they will be removed, x for no change)',type=str.upper)
  
  parser_169=ArgParser(prog='169',description=Cmd.do_169.__doc__)
