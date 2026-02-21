@@ -15,7 +15,7 @@ index 0fcab30..ecacc16 100644
              self.rotation_watcher.reg_callback(lambda _:self.adjustOffset())
          except Exception as e:
 diff --git a/FGO-py/fgoCli.py b/FGO-py/fgoCli.py
-index bfc8e39..79179b2 100644
+index bfc8e39..0812691 100644
 --- a/FGO-py/fgoCli.py
 +++ b/FGO-py/fgoCli.py
 @@ -42,6 +42,17 @@ Some commands support <command> [<subcommand> ...] {{-h, --help}} for further in
@@ -58,7 +58,16 @@ index bfc8e39..79179b2 100644
          self.do_continue(f'-s {arg.sleep}')
      def complete_main(self,text,line,begidx,endidx):
          return self.completecommands({
-@@ -261,6 +276,7 @@ class ArgStruct:
+@@ -235,6 +250,8 @@ Some commands support <command> [<subcommand> ...] {{-h, --help}} for further in
+         'Adapt none 16:9 screen'
+         arg=parser_169.parse_args(line.split())
+         assert fgoDevice.device.available
++        if arg.action is None:
++            arg.action='revoke' if 'Override' in fgoDevice.device.adb.raw_shell('wm size') else 'invoke'
+         getattr(fgoDevice.device,f'{arg.action}169')()
+     def complete_169(self,text,line,begidx,endidx):
+         return self.completecommands({
+@@ -261,6 +278,7 @@ class ArgStruct:
  
  parser_battle=ArgParser(prog='battle',description=Cmd.do_battle.__doc__)
  parser_battle.add_argument('-s','--sleep',help='Sleep before run (default: %(default)s)',type=validator(str,lambda x:re.match(r'\d+([:.]\d+)*$',x),'timedelta'),default='0')
@@ -66,7 +75,7 @@ index bfc8e39..79179b2 100644
  
  parser_bench=ArgParser(prog='bench',description=Cmd.do_bench.__doc__)
  parser_bench.add_argument('-n','--number',help='Number of runs (default: %(default)s)',type=validator(int,lambda x:x>=3,'not-less-than-3 int'),default=20)
-@@ -285,6 +301,8 @@ parser_main.add_argument('appleKind',help='Apple Kind (default: %(default)s)',ty
+@@ -285,6 +303,8 @@ parser_main.add_argument('appleKind',help='Apple Kind (default: %(default)s)',ty
  parser_main.add_argument('-s','--sleep',help='Sleep before run (default: %(default)s)',type=validator(str,lambda x:re.match(r'\d+([:.]\d+)*$',x),'timedelta'),default='0')
  parser_main.add_argument('-a','--appoint',help='Battle count limit (default: %(default)s for no limit)',type=validator(int,lambda x:x>=0,'nonnegative int'),default=0)
  parser_main.add_argument('-q','--quest',help='Goto different quests for different times',action='append',type=ArgStruct(lambda x:tuple(int(i)for i in x.split('-')),validator(int,lambda x:x>=0,'nonnegative int')),default=[],nargs=2)
@@ -75,6 +84,14 @@ index bfc8e39..79179b2 100644
  
  parser_press=ArgParser(prog='press',description=Cmd.do_press.__doc__)
  parser_press.add_argument('button',help='Button',type=str.upper)
+@@ -317,6 +337,6 @@ parser_teamup_set_servant.add_argument('pos',help='Servant # (1-6)',type=int,cho
+ parser_teamup_set_servant.add_argument('value',help='Info value (e.g. 1007-xxxx-1007-2x, add hyphens(-) anywhere as they will be removed, x for no change)',type=str.upper)
+ 
+ parser_169=ArgParser(prog='169',description=Cmd.do_169.__doc__)
+-parser_169.add_argument('action',help='Action',type=str.lower,choices=['invoke','revoke'])
++parser_169.add_argument('action',help='Action',type=str.lower,choices=['invoke','revoke'],nargs='?')
+ 
+ def main(config):Cmd(config).cmdloop()
 diff --git a/FGO-py/fgoConst.py b/FGO-py/fgoConst.py
 index 83c216e..e4cb282 100644
 --- a/FGO-py/fgoConst.py
