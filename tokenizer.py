@@ -463,7 +463,8 @@ r'''
             for i in(i for i in range(3)if Detect.cache.isServantDead(i)):
                 self.servant[i]=(lambda x:(x,)+servantData.get(x,(0,0,0,0,(0,0),((0,0),(0,0),(0,0)))))(Detect.cache.getFieldServant(i))
                 self.countDown[0][i]=[0,0,0]
-        logger.info(f'Turn {turn} Stage {self.stage} StageTurn {self.stageTurn} {[i[0]for i in self.servant]}')
+        self.detectedTurn = Detect.cache.getTurn()
+        logger.info(f'Turn {turn} (Detected Turn {self.detectedTurn}) Stage {self.stage} StageTurn {self.stageTurn} {[i[0]for i in self.servant]}')
         if self.stageTurn==1:Detect.cache.setupEnemyGird()
         self.enemy=ehp=[Detect.cache.getEnemyHp(i)for i in range(6)]
         shp=self.getServantHP()

@@ -118,7 +118,7 @@ index 83c216e..e4cb282 100644
  'closeToTray':False,
  'notifyEnable':False,
 diff --git a/FGO-py/fgoDetect.py b/FGO-py/fgoDetect.py
-index 3335559..2efca75 100644
+index 3335559..eec7759 100644
 --- a/FGO-py/fgoDetect.py
 +++ b/FGO-py/fgoDetect.py
 @@ -45,6 +45,9 @@ class XDetectBase(metaclass=logMeta(logger)):
@@ -131,7 +131,7 @@ index 3335559..2efca75 100644
                  return wrap(type(self)(),*args,**kwargs)
              return wrap
          return wrapper
-@@ -165,6 +168,43 @@ class XDetectBase(metaclass=logMeta(logger)):
+@@ -165,6 +168,57 @@ class XDetectBase(metaclass=logMeta(logger)):
      @retryOnError()
      @validate()
      def getStageTotal(self):return self._ocrInt((912,13,932,38))
@@ -172,10 +172,24 @@ index 3335559..2efca75 100644
 +
 +        ap_full = self._ocrInt((slash_right,curr_ap_line_top,800,curr_ap_line_btm))
 +        return ap_to_consume, ap_current, ap_full
++    def getTurn(self):
++        cur_ap_im = self._crop((884, 85, 920, 106))     # coordinates measured in region CN
++        blank = numpy.zeros(cur_ap_im.shape, cur_ap_im.dtype)
++        dst = numpy.clip(cv2.addWeighted(cur_ap_im, 0.5, blank, 1-0.5, 150), 0, 255).astype(numpy.uint8)
++        dst = cv2.cvtColor(dst, cv2.COLOR_BGR2HSV)
++        for i in range(dst.shape[0]):
++            for j in range(dst.shape[1]):
++                if dst[i, j, 2] > 200:
++                    dst[i, j, 2] = 255
++
++        dst = cv2.cvtColor(dst, cv2.COLOR_HSV2BGR)
++        turn_id = OCR.EN.ocrInt(dst)
++        return turn_id
++
      def getSummonHistory(self):XDetectBase._summonHistory=self._stack(XDetectBase._summonHistory,cv2.threshold(cv2.cvtColor(self._crop((147,157,1105,547)),cv2.COLOR_BGR2GRAY),128,255,cv2.THRESH_BINARY)[1],80)
      @classmethod
      def getSummonHistoryCount(cls):return cls.__new__(cls).inject(XDetectBase._summonHistory)._count((cls.tmpl.SUMMONHISTORY[0][...,0],cls.tmpl.SUMMONHISTORY[1]),(28,0,60,XDetectBase._summonHistory.shape[0]),.7)
-@@ -193,6 +233,56 @@ class XDetectBase(metaclass=logMeta(logger)):
+@@ -193,6 +247,56 @@ class XDetectBase(metaclass=logMeta(logger)):
  class XDetectCN(XDetectBase):
      tmpl=IMG_CN
      ocr=OCR.ZHS
@@ -232,7 +246,7 @@ index 3335559..2efca75 100644
      @classmethod
      def saveWeeklyMission(cls):
          result=[]
-@@ -219,7 +309,7 @@ class DetectBase(XDetectBase):
+@@ -219,7 +323,7 @@ class DetectBase(XDetectBase):
      def __init__(self,anteLatency=.1,postLatency=0):
          schedule.sleep(anteLatency)
          super().__init__()
@@ -349,7 +363,7 @@ index 234771d..a39059d 100644
          self.ends=ends
          self.listener=DirListener(path)
 diff --git a/FGO-py/fgoKernel.py b/FGO-py/fgoKernel.py
-index 368b46f..ba24d46 100644
+index 368b46f..c39bca9 100644
 --- a/FGO-py/fgoKernel.py
 +++ b/FGO-py/fgoKernel.py
 @@ -17,10 +17,12 @@
@@ -366,7 +380,7 @@ index 368b46f..ba24d46 100644
  import fgoDevice
  from itertools import permutations
  from functools import wraps
-@@ -408,6 +410,250 @@ class Turn:
+@@ -408,6 +410,253 @@ class Turn:
          if t:=Detect(.4).getSkillTargetCount():fgoDevice.device.perform(['3333','2244','3234'][t-1][target],(300,))
          while not Detect().isTurnBegin():pass
          Detect(.5)
@@ -376,6 +390,7 @@ index 368b46f..ba24d46 100644
 +    def __init__(self):
 +        self.stage=0
 +        self.stageTurn=0
++        self.detectedTurn = 0
 +        self.countDown=[[[0,0,0],[0,0,0],[0,0,0]],[0,0,0]]
 +    def __call__(self,turn):
 +        self.stage,self.stageTurn=[t:=Detect(.2).getStage(),1+self.stageTurn*(self.stage==t)]
@@ -387,7 +402,8 @@ index 368b46f..ba24d46 100644
 +            for i in(i for i in range(3)if Detect.cache.isServantDead(i)):
 +                self.servant[i]=(lambda x:(x,)+servantData.get(x,(0,0,0,0,(0,0),((0,0),(0,0),(0,0)))))(Detect.cache.getFieldServant(i))
 +                self.countDown[0][i]=[0,0,0]
-+        logger.info(f'Turn {turn} Stage {self.stage} StageTurn {self.stageTurn} {[i[0]for i in self.servant]}')
++        self.detectedTurn = Detect.cache.getTurn()
++        logger.info(f'Turn {turn} (Detected Turn {self.detectedTurn}) Stage {self.stage} StageTurn {self.stageTurn} {[i[0]for i in self.servant]}')
 +        if self.stageTurn==1:Detect.cache.setupEnemyGird()
 +        self.enemy=[Detect.cache.getEnemyHp(i)for i in range(6)]
 +        self.dispatchSkill()
@@ -590,7 +606,8 @@ index 368b46f..ba24d46 100644
 +        fgoDevice.device.perform('Q'+'WER'[skill],(600,300))
 +        if Detect(.7).isSkillNone():
 +            fgoDevice.device.perform('\x08',(700,))
-+        elif t:=Detect.cache.getSkillTargetCount():
++        # elif t:=Detect.cache.getSkillTargetCount():
++        else:
 +            try:
 +                if len(targets) == 2:   # exchange servants
 +                    fgoDevice.device.perform(('TYUIOP'[targets[0]],'TYUIOP'[targets[1]],'Z'),(300,300,2600))
@@ -617,7 +634,7 @@ index 368b46f..ba24d46 100644
  class Battle:
      def __init__(self,turnClass=Turn):
          self.turn=0
-@@ -450,10 +696,11 @@ class Battle:
+@@ -450,10 +699,11 @@ class Battle:
  class Main:
      teamIndex=0
      autoFormation=False
@@ -630,7 +647,7 @@ index 368b46f..ba24d46 100644
      @serialize(mutex)
      def __call__(self,questIndex=0,battleTotal=None):
          self.prepare()
-@@ -479,6 +726,19 @@ class Main:
+@@ -479,6 +729,19 @@ class Main:
                      if self.battleCount==battleTotal:
                          fgoDevice.device.press('F')
                          return logger.info('Operation Unit Completed')
@@ -650,7 +667,7 @@ index 368b46f..ba24d46 100644
                      fgoDevice.device.press('K')
                      if Detect(.7,.3).isApEmpty()and not self.eatApple():return logger.info('Ap Empty')
                      self.chooseFriend()
-@@ -536,7 +796,7 @@ class Main:
+@@ -536,7 +799,7 @@ class Main:
                  fgoDevice.device.perform('\xBAK',(500,1000))
                  refresh=True
                  continue
@@ -659,7 +676,7 @@ index 368b46f..ba24d46 100644
          if not friendImg.flush():return fgoDevice.device.press('8')
          while True:
              timer=time.time()
-@@ -553,7 +813,9 @@ class Main:
+@@ -553,7 +816,9 @@ class Main:
              if refresh:schedule.sleep(max(0,timer+10-time.time()))
              fgoDevice.device.perform('\xBAK',(500,1000))
              refresh=True
