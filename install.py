@@ -34,6 +34,15 @@ def main():
 
     if not os.path.exists(slash_png_path):
         shutil.copy(os.path.join(os.path.dirname(os.path.abspath(__file__)), "slash.png"), os.path.join(fgo_py_dir, "fgoImage"))
+        shutil.copy(os.path.join(os.path.dirname(os.path.abspath(__file__)), "findfriendrightbar.png"), os.path.join(fgo_py_dir, "fgoImage"))
+        shutil.copy(os.path.join(os.path.dirname(os.path.abspath(__file__)), "findfriendclassscoreslashplusfat.png"), os.path.join(fgo_py_dir, "fgoImage"))
+        shutil.copy(os.path.join(os.path.dirname(os.path.abspath(__file__)), "findfriendclassscoreslashplusthin.png"), os.path.join(fgo_py_dir, "fgoImage"))
+        shutil.copy(os.path.join(os.path.dirname(os.path.abspath(__file__)), "kizunareisoutonp.png"), os.path.join(fgo_py_dir, "fgoImage"))
+        shutil.copy(os.path.join(os.path.dirname(os.path.abspath(__file__)), "kizuna10.png"), os.path.join(fgo_py_dir, "fgoImage"))
+        shutil.copy(os.path.join(os.path.dirname(os.path.abspath(__file__)), "kizuna15.png"), os.path.join(fgo_py_dir, "fgoImage"))
+        shutil.copy(os.path.join(os.path.dirname(os.path.abspath(__file__)), "findfriendclassscorerecttop.png"), os.path.join(fgo_py_dir, "fgoImage"))
+        shutil.copy(os.path.join(os.path.dirname(os.path.abspath(__file__)), "findfriendhougulevelkeywordcn.png"), os.path.join(fgo_py_dir, "fgoImage", "cn"))
+        shutil.move(os.path.join(fgo_py_dir, "fgoImage", "cn", "findfriendhougulevelkeywordcn.png"), os.path.join(fgo_py_dir, "fgoImage", "cn", "findfriendhougulevelkeyword.png"))
 
     os.system("cd " + os.path.dirname(os.path.abspath(__file__)) + " && git pull")
     os.system("cd " + fgo_py_dir + (" && git reset --hard origin/master" if platform.system() != "Windows" else "") + " && git apply " +
