@@ -2,7 +2,7 @@ import os, shutil, re, platform
 import argparse
 from tokenizer import generateCustomizedTurn
 
-PATCH_VER = "v21.0.2"
+PATCH_VER = "v21.1.1"
 FGOPY_ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "../FGO-py/"))
 
 def parse_args():
@@ -37,6 +37,8 @@ def main():
         shutil.copy(os.path.join(os.path.dirname(os.path.abspath(__file__)), "findfriendrightbar.png"), os.path.join(fgo_py_dir, "fgoImage"))
         shutil.copy(os.path.join(os.path.dirname(os.path.abspath(__file__)), "findfriendclassscoreslashplusfat.png"), os.path.join(fgo_py_dir, "fgoImage"))
         shutil.copy(os.path.join(os.path.dirname(os.path.abspath(__file__)), "findfriendclassscoreslashplusthin.png"), os.path.join(fgo_py_dir, "fgoImage"))
+        shutil.copy(os.path.join(os.path.dirname(os.path.abspath(__file__)), "findfriendclassscorenormalplus.png"), os.path.join(fgo_py_dir, "fgoImage"))
+        shutil.copy(os.path.join(os.path.dirname(os.path.abspath(__file__)), "kizunareisousymbol.png"), os.path.join(fgo_py_dir, "fgoImage"))
         shutil.copy(os.path.join(os.path.dirname(os.path.abspath(__file__)), "kizunareisoutonp.png"), os.path.join(fgo_py_dir, "fgoImage"))
         shutil.copy(os.path.join(os.path.dirname(os.path.abspath(__file__)), "kizuna10.png"), os.path.join(fgo_py_dir, "fgoImage"))
         shutil.copy(os.path.join(os.path.dirname(os.path.abspath(__file__)), "kizuna15.png"), os.path.join(fgo_py_dir, "fgoImage"))
