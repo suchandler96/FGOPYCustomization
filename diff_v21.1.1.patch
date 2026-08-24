@@ -1,21 +1,26 @@
 diff --git a/FGO-py/fgoAndroid.py b/FGO-py/fgoAndroid.py
-index 0fcab30..ecacc16 100644
+index 7e0c18f..1c2de81 100644
 --- a/FGO-py/fgoAndroid.py
 +++ b/FGO-py/fgoAndroid.py
-@@ -18,7 +18,10 @@ class Android(Airtest):
+@@ -3,6 +3,7 @@ from airtest.core.android.adb import ADB
+ from airtest.core.android.android import Android as Airtest
+ from airtest.core.android.constant import CAP_METHOD
+ from fgoConst import KEYMAP
++from fgoConst import PACKAGE_TO_REGION
+ from fgoLogging import getLogger
+ logger=getLogger('Android')
+ 
+@@ -18,7 +19,7 @@ class Android(Airtest):
              return
          try:
-             super().__init__(serial,**{'cap_method':CAP_METHOD.JAVACAP}|kwargs)
+             super().__init__(serial,**{'cap_method':CAP_METHOD.JAVACAP,'host':os.environ.get('ADB_SERVER_SOCKET','tcp:localhost:5037').split(":")[1:]}|kwargs)
 -            self.package=next(i for i in re.findall(r'ACTIVITY ([A-Za-z0-9_.]+)/',self.adb.shell('dumpsys activity top'))[::-1]if(lambda x:x[2]-x[0]>959 and x[3]-x[1]>539)(self.get_render_resolution(True,i)))
-+            from fgoConst import PACKAGE_TO_REGION
-+            self.package=next(i for i in re.findall(r'ACTIVITY ([A-Za-z0-9_.]+)/',self.adb.shell('dumpsys activity top'))[::-1]
-+                              if(lambda x, y:x[2]-x[0]>959 and x[3]-x[1]>539 and y in PACKAGE_TO_REGION.keys())
-+                              (self.get_render_resolution(True,i), i))
++            self.package=next(i for i in re.findall(r'ACTIVITY ([A-Za-z0-9_.]+)/',self.adb.shell('dumpsys activity top'))[::-1]if(lambda x,y:x[2]-x[0]>959 and x[3]-x[1]>539 and y in PACKAGE_TO_REGION.keys())(self.get_render_resolution(True,i), i))
              self.adjustOffset()
              self.rotation_watcher.reg_callback(lambda _:self.adjustOffset())
          except Exception as e:
 diff --git a/FGO-py/fgoCli.py b/FGO-py/fgoCli.py
-index bfc8e39..d4ff141 100644
+index 44dc241..2324a8b 100644
 --- a/FGO-py/fgoCli.py
 +++ b/FGO-py/fgoCli.py
 @@ -42,6 +42,20 @@ Some commands support <command> [<subcommand> ...] {{-h, --help}} for further in
@@ -62,25 +67,27 @@ index bfc8e39..d4ff141 100644
          self.do_continue(f'-s {arg.sleep}')
      def do_bench(self,line):
          'Benchmark'
-@@ -154,7 +176,16 @@ Some commands support <command> [<subcommand> ...] {{-h, --help}} for further in
+@@ -154,7 +176,18 @@ Some commands support <command> [<subcommand> ...] {{-h, --help}} for further in
          'Loop for battle until AP empty'
          arg=parser_main.parse_args(line.split())
          fgoKernel.schedule.stopLater(arg.appoint)
--        self.work=fgoKernel.Operation(arg.quest,arg.appleCount,['gold','silver','bronze','copper','quartz'].index(arg.appleKind))
+-        self.work=fgoKernel.Operation(arg.quest,arg.appleCount,['gold','silver','bronze','copper','quartz'].index(arg.appleKind),wait=arg.wait)
++
 +        real_class_name = self.get_real_class_name(arg.turnClass)
-+        assert type(arg.friendClassScoreAtLeast) == int or (len(arg.friendClassScoreAtLeast) in [1,2] and (isinstance(arg.friendClassScoreAtLeast, list) or isinstance(arg.friendClassScoreAtLeast, tuple)))
-+        self.work=fgoKernel.Operation(arg.quest,arg.appleCount,['gold','silver','bronze','copper','quartz'].index(arg.appleKind),
++        assert type(arg.friendClassScoreAtLeast) == int or (len(arg.friendClassScoreAtLeast) in [0,1,2] and (isinstance(arg.friendClassScoreAtLeast, list) or isinstance(arg.friendClassScoreAtLeast, tuple)))
++        self.work=fgoKernel.Operation(arg.quest,arg.appleCount,['gold','silver','bronze','copper','quartz'].index(arg.appleKind),wait=arg.wait,
 +                                      battleClass=eval("lambda:fgoKernel.Battle(fgoKernel."+real_class_name+")"),
 +                                      waitForAp=arg.waitForAp,
 +                                      battleTotal=arg.appoint,
 +                                      friendClassScoreAtLeast=arg.friendClassScoreAtLeast,
 +                                      friendHouguAtLeast=arg.friendHouguAtLeast,
 +                                      friendAllowedReisous=arg.friendAllowedReisous,
++                                      friendRequireKizunaReisou=arg.friendRequireKizunaReisou,
 +                                      friendRequireKizunaReisouToNP=arg.friendRequireKizunaReisouToNP)
          self.do_continue(f'-s {arg.sleep}')
      def complete_main(self,text,line,begidx,endidx):
          return self.completecommands({
-@@ -235,6 +266,8 @@ Some commands support <command> [<subcommand> ...] {{-h, --help}} for further in
+@@ -239,6 +272,8 @@ Some commands support <command> [<subcommand> ...] {{-h, --help}} for further in
          'Adapt none 16:9 screen'
          arg=parser_169.parse_args(line.split())
          assert fgoDevice.device.available
@@ -89,7 +96,7 @@ index bfc8e39..d4ff141 100644
          getattr(fgoDevice.device,f'{arg.action}169')()
      def complete_169(self,text,line,begidx,endidx):
          return self.completecommands({
-@@ -261,6 +294,7 @@ class ArgStruct:
+@@ -265,6 +300,7 @@ class ArgStruct:
  
  parser_battle=ArgParser(prog='battle',description=Cmd.do_battle.__doc__)
  parser_battle.add_argument('-s','--sleep',help='Sleep before run (default: %(default)s)',type=validator(str,lambda x:re.match(r'\d+([:.]\d+)*$',x),'timedelta'),default='0')
@@ -97,21 +104,22 @@ index bfc8e39..d4ff141 100644
  
  parser_bench=ArgParser(prog='bench',description=Cmd.do_bench.__doc__)
  parser_bench.add_argument('-n','--number',help='Number of runs (default: %(default)s)',type=validator(int,lambda x:x>=3,'not-less-than-3 int'),default=20)
-@@ -285,6 +319,12 @@ parser_main.add_argument('appleKind',help='Apple Kind (default: %(default)s)',ty
- parser_main.add_argument('-s','--sleep',help='Sleep before run (default: %(default)s)',type=validator(str,lambda x:re.match(r'\d+([:.]\d+)*$',x),'timedelta'),default='0')
+@@ -290,6 +326,13 @@ parser_main.add_argument('-s','--sleep',help='Sleep before run (default: %(defau
  parser_main.add_argument('-a','--appoint',help='Battle count limit (default: %(default)s for no limit)',type=validator(int,lambda x:x>=0,'nonnegative int'),default=0)
  parser_main.add_argument('-q','--quest',help='Goto different quests for different times',action='append',type=ArgStruct(lambda x:tuple(int(i)for i in x.split('-')),validator(int,lambda x:x>=0,'nonnegative int')),default=[],nargs=2)
+ parser_main.add_argument('-w','--wait',help='When quest set, wait before each quest to ensure sufficient AP',action='store_true')
 +parser_main.add_argument('-t','--turnClass',type=str,default='Turn')
-+parser_main.add_argument('-w','--waitForAp',help='Wait for AP refill when AP is insufficient', action='store_true')
++parser_main.add_argument('--waitForAp',help='Wait for AP refill after each battle when AP is insufficient', action='store_true')
 +parser_main.add_argument('-cs','--friendClassScoreAtLeast',nargs='*',type=int,default=[],help="accept 1 or 2 integers as the minimum class score for selecting friend servant")
-+parser_main.add_argument('-h','--friendHouguAtLeast',help="hougu level 0~5; 0 means no requirement",default=0,type=validator(int,lambda x: 0<=x<=5,'hougu level 0~5; 0 means no requirement'))
++parser_main.add_argument('-hl','--friendHouguAtLeast',help="hougu level 0~5; 0 means no requirement",default=0,type=validator(int,lambda x: 0<=x<=5,'hougu level 0~5; 0 means no requirement'))
 +parser_main.add_argument('-r','--friendAllowedReisous',nargs='*',type=str,choices=["kizuna10", "kizuna15"],default=[],help="list of allowed reisous for selecting friend servant; empty means no requirement")
++parser_main.add_argument('-k','--friendRequireKizunaReisou',help="require friend's servant has a kizuna reisou but does not convert it to 50NP, only used in grand battles",action='store_true')
 +parser_main.add_argument('-n','--friendRequireKizunaReisouToNP',help="require friend's servant has a kizuna reisou and converts it to 50NP, only used in grand battles",action='store_true')
  
  parser_press=ArgParser(prog='press',description=Cmd.do_press.__doc__)
  parser_press.add_argument('button',help='Button',type=str.upper)
-@@ -317,6 +357,6 @@ parser_teamup_set_servant.add_argument('pos',help='Servant # (1-6)',type=int,cho
- parser_teamup_set_servant.add_argument('value',help='Info value (e.g. 1007-xxxx-1007-2x, add hyphens(-) anywhere as they will be removed, x for no change)',type=str.upper)
+@@ -328,6 +371,6 @@ parser_week.add_argument('-c','--cmd',help='Print cmd line instead of pretty lis
+ parser_week.add_argument('-e','--exec',help='Execute the solved quest queue',action='store_true')
  
  parser_169=ArgParser(prog='169',description=Cmd.do_169.__doc__)
 -parser_169.add_argument('action',help='Action',type=str.lower,choices=['invoke','revoke'])
@@ -119,10 +127,10 @@ index bfc8e39..d4ff141 100644
  
  def main(config):Cmd(config).cmdloop()
 diff --git a/FGO-py/fgoConst.py b/FGO-py/fgoConst.py
-index 83c216e..4c3ef0c 100644
+index 7fb5e4d..e9c1e22 100644
 --- a/FGO-py/fgoConst.py
 +++ b/FGO-py/fgoConst.py
-@@ -6,6 +6,11 @@ CONFIG={
+@@ -6,6 +6,12 @@ CONFIG={
  'farming':False,
  'stopOnDefeated':True,
  'stopOnKizunaReisou':True,
@@ -130,12 +138,13 @@ index 83c216e..4c3ef0c 100644
 +'friendClassScoreAtLeast':[],
 +'friendHouguAtLeast':0,
 +'friendAllowedReisous':[],
++'friendRequireKizunaReisou':False,
 +'friendRequireKizunaReisouToNP':False,
  'stayOnTop':False,
  'closeToTray':False,
  'notifyEnable':False,
 diff --git a/FGO-py/fgoDetect.py b/FGO-py/fgoDetect.py
-index 3335559..ca21217 100644
+index 1f70686..8acfeed 100644
 --- a/FGO-py/fgoDetect.py
 +++ b/FGO-py/fgoDetect.py
 @@ -45,6 +45,9 @@ class XDetectBase(metaclass=logMeta(logger)):
@@ -148,10 +157,15 @@ index 3335559..ca21217 100644
                  return wrap(type(self)(),*args,**kwargs)
              return wrap
          return wrapper
-@@ -56,11 +59,37 @@ class XDetectBase(metaclass=logMeta(logger)):
+@@ -55,12 +58,41 @@ class XDetectBase(metaclass=logMeta(logger)):
+     def _loc(self,img,rect=(0,0,1280,720)):return cv2.minMaxLoc(cv2.matchTemplate(self._crop(rect),img[0],cv2.TM_SQDIFF_NORMED,mask=img[1]))
      def _compare(self,img,rect=(0,0,1280,720),threshold=.05):return threshold>self._loc(img,rect)[0]
      def _select(self,img,rect=(0,0,1280,720),threshold=.2):return(lambda x:numpy.argmin(x)if threshold>min(x)else None)([self._loc(i,rect)[0]for i in img])
-     def _find(self,img,rect=(0,0,1280,720),threshold=.05):return(lambda loc:(rect[0]+loc[2][0]+(img[0].shape[1]>>1),rect[1]+loc[2][1]+(img[0].shape[0]>>1))if loc[0]<threshold else None)(self._loc(img,rect))
+-    def _find(self,img,rect=(0,0,1280,720),threshold=.05):return(lambda loc:(rect[0]+loc[2][0]+(img[0].shape[1]>>1),rect[1]+loc[2][1]+(img[0].shape[0]>>1))if loc[0]<threshold else None)(self._loc(img,rect))
++    def _find(self,img,rect=(0,0,1280,720),threshold=.05):
++        loc_res = self._loc(img,rect)
++        print("_find:" + str(loc_res))
++        return (lambda loc:(rect[0]+loc[2][0]+(img[0].shape[1]>>1),rect[1]+loc[2][1]+(img[0].shape[0]>>1))if loc[0]<threshold else None)(loc_res)
 +    def _edge_find(self,img,rect=(0,0,1280,720),threshold=.45):
 +        edge_tmpl=self._to_edge(img[0])
 +        crop_edges=self._to_edge(self._crop(rect))
@@ -186,7 +200,7 @@ index 3335559..ca21217 100644
      @coroutine
      def _asyncImageChange(self,rect,threshold=.02):
          img=self._crop(rect)
-@@ -154,7 +183,7 @@ class XDetectBase(metaclass=logMeta(logger)):
+@@ -157,7 +189,7 @@ class XDetectBase(metaclass=logMeta(logger)):
          if self.enemyGird==0:return(0,0)if pos>2 else(lambda count:(lambda c2:(c2,c2)if c2 else(lambda c0,c1:(c1,c0+c1))(count(self.tmpl.CHARGE0),count(self.tmpl.CHARGE1),))(count(self.tmpl.CHARGE2)))(lambda img:self._count(img,(160+250*pos,67,250+250*pos,88)))
          if self.enemyGird==2:return(lambda count:(lambda c2:(c2,c2)if c2 else(lambda c0,c1:(c1,c0+c1))(count(self.tmpl.CHARGE0_SMALL),count(self.tmpl.CHARGE1_SMALL),))(count(self.tmpl.CHARGE2_SMALL)))(lambda img:self._count(img,(231+pos%3*200-pos//3*100,49+pos//3*99,311+pos%3*200-pos//3*100,72+pos//3*99)))
      def getFieldServant(self,pos):return(lambda img,cls:min((numpy.min(cv2.matchTemplate(img,i[0],cv2.TM_SQDIFF_NORMED,mask=i[1])),no)for no,(_,portrait,_)in servantImg.items()if servantData[no][0]==cls[0]for i in portrait)[1]if cls else 0)(self._crop((120+318*pos,421,207+318*pos,490)),self.getFieldServantClassRank(pos))
@@ -195,29 +209,40 @@ index 3335559..ca21217 100644
      def getFieldServantHp(self,pos):return self._ocrInt((200+317*pos,620,293+317*pos,644))
      def getFieldServantNp(self,pos):return self._ocrInt((220+317*pos,655,271+317*pos,680))
      def getMaterial(self):return(lambda x:{materialImg[i][0]:x.count(i)for i in set(x)-{None}})([self._select(((i[1],None)for i in materialImg),(176+i%7*137,110+i//7*142,253+i%7*137,187+i//7*142),.02)for i in range(1,21)])
-@@ -165,6 +194,57 @@ class XDetectBase(metaclass=logMeta(logger)):
+@@ -168,6 +200,56 @@ class XDetectBase(metaclass=logMeta(logger)):
      @retryOnError()
      @validate()
      def getStageTotal(self):return self._ocrInt((912,13,932,38))
-+    def getAP(self):
++    def getApAfterBattle(self):
++        # import datetime
++        # time_stamp = str(datetime.datetime.now())
++        # try:
++        #     print(time_stamp, "save figure")
++        #     self.save()
++        # except:
++        #     print(time_stamp, "save figure failed")
++        #     pass
++
 +        # find the position of slash
-+        slash_center_coord = self._find(self.tmpl.SLASH, (656,363,800,432), .2)
++        slash_center_coord = self._find(self.tmpl.SLASH, (662,328,800,365), .2)
++        # originally, (662,328,800,365) -> (656,363,800,432)
 +
 +        curr_ap_line_top = slash_center_coord[1] - (self.tmpl.SLASH[0].shape[0]>>1)
 +        curr_ap_line_btm = slash_center_coord[1] + (self.tmpl.SLASH[0].shape[0]>>1)
 +        slash_left = slash_center_coord[0] - (self.tmpl.SLASH[0].shape[1]>>1)
 +        slash_right = slash_center_coord[0] + (self.tmpl.SLASH[0].shape[1]>>1)
-+
-+        ap_to_consume = self._ocrInt((728,curr_ap_line_top-36,800,curr_ap_line_top))
++        # self.save(name="ocr_ap_to_consume", rect=(662,curr_ap_line_top-36,800,curr_ap_line_top))
++        ap_to_consume = self._ocrInt((662,curr_ap_line_top-36,800,curr_ap_line_top))    # originally, 662 -> 728
 +        ap_enough = True
 +        for i in range(curr_ap_line_top-36, curr_ap_line_top):
-+            for j in range(728, 800):
++            for j in range(662, 800):
 +                if self.im[i, j, 0] < 10 and self.im[i, j, 1] < 10 and self.im[i, j, 2] > 200:
 +                    ap_enough = False   # if any pixel is red, then AP is not enough
 +                    break
 +        print("ap_enough:", ap_enough)
 +
-+        cur_ap_im = self._crop((656,curr_ap_line_top,slash_left,curr_ap_line_btm))
++        # self.save(name="ocr_ap_current", rect=(662,curr_ap_line_top,slash_left,curr_ap_line_btm))
++        cur_ap_im = self._crop((662,curr_ap_line_top,slash_left,curr_ap_line_btm))  # originally, 662 -> 656
 +        blank = numpy.zeros(cur_ap_im.shape, cur_ap_im.dtype)
 +        dst = numpy.clip(cv2.addWeighted(cur_ap_im, 0.5, blank, 1-0.5, 150), 0, 255).astype(numpy.uint8)
 +        dst = cv2.cvtColor(dst, cv2.COLOR_BGR2HSV)
@@ -228,39 +253,27 @@ index 3335559..ca21217 100644
 +
 +        dst = cv2.cvtColor(dst, cv2.COLOR_HSV2BGR)
 +        ap_current = OCR.EN.ocrInt(dst)
++        # cv2.imwrite(time.strftime(f'processed_ocr_ap_current{f"_%Y-%m-%d_%H.%M.%S.{round(self.time*1000)%1000:03}"}.png',time.localtime(self.time)),dst,[cv2.IMWRITE_PNG_COMPRESSION,9])
 +
 +        if not ap_enough and ap_current >= ap_to_consume:
 +            print("ap_current =", ap_current, ", ap_to_consume =", ap_to_consume)
 +            print("potential error in OCR, setting ap_current to 0")
 +            ap_current = 0
 +
++        # self.save(name="ocr_ap_full", rect=(slash_right,curr_ap_line_top,800,curr_ap_line_btm))
 +        ap_full = self._ocrInt((slash_right,curr_ap_line_top,800,curr_ap_line_btm))
 +        return ap_to_consume, ap_current, ap_full
-+    def getTurn(self):
-+        cur_ap_im = self._crop((884, 85, 920, 106))     # coordinates measured in region CN
-+        blank = numpy.zeros(cur_ap_im.shape, cur_ap_im.dtype)
-+        dst = numpy.clip(cv2.addWeighted(cur_ap_im, 0.5, blank, 1-0.5, 150), 0, 255).astype(numpy.uint8)
-+        dst = cv2.cvtColor(dst, cv2.COLOR_BGR2HSV)
-+        for i in range(dst.shape[0]):
-+            for j in range(dst.shape[1]):
-+                if dst[i, j, 2] > 200:
-+                    dst[i, j, 2] = 255
-+
-+        dst = cv2.cvtColor(dst, cv2.COLOR_HSV2BGR)
-+        turn_id = OCR.EN.ocrInt(dst)
-+        return turn_id
-+
      def getSummonHistory(self):XDetectBase._summonHistory=self._stack(XDetectBase._summonHistory,cv2.threshold(cv2.cvtColor(self._crop((147,157,1105,547)),cv2.COLOR_BGR2GRAY),128,255,cv2.THRESH_BINARY)[1],80)
      @classmethod
      def getSummonHistoryCount(cls):return cls.__new__(cls).inject(XDetectBase._summonHistory)._count((cls.tmpl.SUMMONHISTORY[0][...,0],cls.tmpl.SUMMONHISTORY[1]),(28,0,60,XDetectBase._summonHistory.shape[0]),.7)
-@@ -174,7 +254,141 @@ class XDetectBase(metaclass=logMeta(logger)):
+@@ -177,7 +259,139 @@ class XDetectBase(metaclass=logMeta(logger)):
      def getTeamServantClassRank(self):return[(lambda x:x if x is None else classImg[0][x])(self._select(CLASS[100],(30+200*i+15*(i>2),133,115+200*i+15*(i>2),203)))for i in range(6)]
      def getWeeklyMission(self):XDetectBase._weeklyMission=self._stack(XDetectBase._weeklyMission,self._crop((603,250,1092,710)),157)
      def findChapter(self,chapter):return self._find((chapterImg[chapter],None),(640,90,1230,600))
 -    def findFriend(self,img):return self._find(img,(13,166,1233,720),.04)
-+    def findFriend(self, img, classScoresAtLeast=None, houguAtLeast=None, allowedReisous=[], requireKizunaReisouToNP=False):
-+        # an example of allowed_reisous: allowed_reisous=["KIZUNA10", "KIZUNA15"]
-+        if not classScoresAtLeast and not houguAtLeast and not allowedReisous and not requireKizunaReisouToNP:
++    def findFriend(self, img, classScoresAtLeast=None, houguAtLeast=None, allowedReisous=[], requireKizunaReisou=False, requireKizunaReisouToNP=False):
++        # an example of allowed_reisous: allowed_reisous=["KIZUNA10", "KIZUNA15", "KIZUNAORDEREDFEMALE", "KIZUNAORDEREDKIND", "KIZUNACLOTHES"]
++        if not classScoresAtLeast and not houguAtLeast and not allowedReisous and not requireKizunaReisou and not requireKizunaReisouToNP:
 +            # empty containers are also falsy
 +            # return self._find(img,(13,166,1233,720),.04)
 +            return self._find(img,(13,166,1233,720),.06)
@@ -318,15 +331,20 @@ index 3335559..ca21217 100644
 +                        print("reisou does not match")
 +                        continue
 +
-+            if is_grand_battle and requireKizunaReisouToNP:
++            if is_grand_battle:
 +                # servant_y_range bottom: 576
 +                # kizuna_reisou converted to NP: (220, 475, 246, 500)
-+                kizuna_to_np_region = (220, servant_y_range[1] - 102, 246, servant_y_range[1] - 76)
-+                if not self._find(self.tmpl.KIZUNAREISOUTONP, kizuna_to_np_region, .06):
-+                    print("kizuna reisou convert to NP symbol not found")
-+                    continue
++                kizuna_reisou_symbol_region = (220, servant_y_range[1] - 102, 246, servant_y_range[1] - 76)
++                if requireKizunaReisouToNP:
++                    if not self._find(self.tmpl.KIZUNAREISOUTONP, kizuna_reisou_symbol_region, .2):
++                        print("kizuna reisou convert to NP symbol not found")
++                        continue
++                elif requireKizunaReisou:
++                    if not self._find(self.tmpl.KIZUNAREISOUSYMBOL, kizuna_reisou_symbol_region, .2):
++                        print("kizuna reisou symbol not found")
++                        continue
 +
-+            if classScoresAtLeast is not None:
++            if classScoresAtLeast:
 +                match_digit_y_range = (servant_y_range[0] + 149, servant_y_range[0] + 168)
 +                print("match_digit_y_range =", match_digit_y_range)
 +
@@ -345,7 +363,6 @@ index 3335559..ca21217 100644
 +                        print("not grand servant, skip")
 +                        continue    # not grand servant
 +
-+                if slash_border:
 +                    l_num = abs(self._ocrInt((1024,     # todo: possibly need to match the '+' and change 1024 to its boundary
 +                                              match_digit_y_range[0],
 +                                              slash_border[0],
@@ -361,6 +378,7 @@ index 3335559..ca21217 100644
 +                    if r_num >= 100: r_num = r_num % 100
 +                    # print("r_num =", r_num)
 +                    if r_num < classScoresAtLeast[1]: continue
++
 +                else:
 +                    # edge find created by ClaudeCode
 +                    # match_plus_range = (1024, match_digit_y_range[0], 1044, match_digit_y_range[1]-4)
@@ -373,22 +391,15 @@ index 3335559..ca21217 100644
 +                    # if cls_sc < class_scores_at_least: continue
 +
 +                    # original find
-+                    match_plus_range = (1024, match_digit_y_range[0], 1044, match_digit_y_range[1]-4)
-+                    plus_loc = self._loc(self.tmpl.FINDFRIENDCLASSSCORENORMALPLUSWHITE, match_plus_range)
-+                    plus_r_border = match_plus_range[0] + plus_loc[2][0]
-+                    # if y_plus_pos := self._find(self.tmpl.FINDFRIENDCLASSSCORENORMALPLUSYELLOW, match_plus_range, 0.15):
-+                    #     plus_r_border = y_plus_pos[0] + (self.tmpl.FINDFRIENDCLASSSCORENORMALPLUSYELLOW[0].shape[1] >> 1)
-+                    # elif w_plus_pos := self._find(self.tmpl.FINDFRIENDCLASSSCORENORMALPLUSWHITE, match_plus_range, 0.15):
-+                    #     plus_r_border = w_plus_pos[0] + (self.tmpl.FINDFRIENDCLASSSCORENORMALPLUSWHITE[0].shape[1] >> 1)
-+                    # else:
-+                    #     print("No plus symbol can be matched in " + str(match_plus_range))
-+                    #     print()
-+                    #     exit()
-+                    #     continue
-+                    # print("plus_r_border =", plus_r_border)
-+                    cls_sc = self._ocrInt((plus_r_border, match_digit_y_range[0], 1062, match_digit_y_range[1]))
-+                    # print("cls_sc =", cls_sc)
-+                    if cls_sc < classScoresAtLeast: continue
++                    match_plus_range = (1024, match_digit_y_range[0], 1044, match_digit_y_range[1]-2)
++                    if plus_loc := self._gray_find(self.tmpl.FINDFRIENDCLASSSCORENORMALPLUS, match_plus_range, .6):
++                        plus_r_border = plus_loc[0] + (self.tmpl.FINDFRIENDCLASSSCORENORMALPLUS[0].shape[1] >> 1)
++                        cls_sc = self._ocrInt((plus_r_border, match_digit_y_range[0], 1062, match_digit_y_range[1]))
++                        # print("cls_sc =", cls_sc)
++                        if cls_sc < classScoresAtLeast: continue
++                    else:
++                        print("error in searching for '+' in non-grand battle, weird!")
++                        continue
 +
 +            print("friend found:", raw_pos)
 +            return raw_pos
@@ -396,40 +407,12 @@ index 3335559..ca21217 100644
      def findMail(self,img):return self._find(img,(73,166,920,720),.017)
      def findMapCamera(self,chapter):return numpy.array(cv2.minMaxLoc(cv2.matchTemplate(mapImg[chapter],cv2.resize(self._crop((200,200,1080,520)),(0,0),fx=.3,fy=.3,interpolation=cv2.INTER_CUBIC),cv2.TM_SQDIFF_NORMED))[2])/.3+(440,160)
      @classmethod
-@@ -193,6 +407,56 @@ class XDetectBase(metaclass=logMeta(logger)):
- class XDetectCN(XDetectBase):
-     tmpl=IMG_CN
-     ocr=OCR.ZHS
-+    def getAP(self):
-+        # import datetime
-+        # time_stamp = str(datetime.datetime.now())
-+        # try:
-+        #     print(time_stamp, "save figure")
-+        #     self.save()
-+        # except:
-+        #     print(time_stamp, "save figure failed")
-+        #     pass
-+
-+        # find the position of slash
-+        slash_center_coord = self._find(self.tmpl.SLASH, (662,328,800,365), .2)
-+        # originally, (662,328,800,365) -> (656,363,800,432)
-+
-+        curr_ap_line_top = slash_center_coord[1] - (self.tmpl.SLASH[0].shape[0]>>1)
-+        curr_ap_line_btm = slash_center_coord[1] + (self.tmpl.SLASH[0].shape[0]>>1)
-+        slash_left = slash_center_coord[0] - (self.tmpl.SLASH[0].shape[1]>>1)
-+        slash_right = slash_center_coord[0] + (self.tmpl.SLASH[0].shape[1]>>1)
-+        # self.save(name="ocr_ap_to_consume", rect=(662,curr_ap_line_top-36,800,curr_ap_line_top))
-+        ap_to_consume = self._ocrInt((662,curr_ap_line_top-36,800,curr_ap_line_top))    # originally, 662 -> 728
-+        ap_enough = True
-+        for i in range(curr_ap_line_top-36, curr_ap_line_top):
-+            for j in range(662, 800):
-+                if self.im[i, j, 0] < 10 and self.im[i, j, 1] < 10 and self.im[i, j, 2] > 200:
-+                    ap_enough = False   # if any pixel is red, then AP is not enough
-+                    break
-+        print("ap_enough:", ap_enough)
-+
-+        # self.save(name="ocr_ap_current", rect=(662,curr_ap_line_top,slash_left,curr_ap_line_btm))
-+        cur_ap_im = self._crop((662,curr_ap_line_top,slash_left,curr_ap_line_btm))  # originally, 662 -> 656
+@@ -206,6 +420,19 @@ class XDetectCN(XDetectBase):
+                 mission=''
+             else:mission+=i
+         return result
++    def getTurn(self):
++        cur_ap_im = self._crop((884, 84, 920, 106))     # coordinates measured in region CN
 +        blank = numpy.zeros(cur_ap_im.shape, cur_ap_im.dtype)
 +        dst = numpy.clip(cv2.addWeighted(cur_ap_im, 0.5, blank, 1-0.5, 150), 0, 255).astype(numpy.uint8)
 +        dst = cv2.cvtColor(dst, cv2.COLOR_BGR2HSV)
@@ -439,21 +422,12 @@ index 3335559..ca21217 100644
 +                    dst[i, j, 2] = 255
 +
 +        dst = cv2.cvtColor(dst, cv2.COLOR_HSV2BGR)
-+        ap_current = OCR.EN.ocrInt(dst)
-+        # cv2.imwrite(time.strftime(f'processed_ocr_ap_current{f"_%Y-%m-%d_%H.%M.%S.{round(self.time*1000)%1000:03}"}.png',time.localtime(self.time)),dst,[cv2.IMWRITE_PNG_COMPRESSION,9])
-+
-+        if not ap_enough and ap_current >= ap_to_consume:
-+            print("ap_current =", ap_current, ", ap_to_consume =", ap_to_consume)
-+            print("potential error in OCR, setting ap_current to 0")
-+            ap_current = 0
-+
-+        # self.save(name="ocr_ap_full", rect=(slash_right,curr_ap_line_top,800,curr_ap_line_btm))
-+        ap_full = self._ocrInt((slash_right,curr_ap_line_top,800,curr_ap_line_btm))
-+        return ap_to_consume, ap_current, ap_full
-     @classmethod
-     def saveWeeklyMission(cls):
-         result=[]
-@@ -219,7 +483,7 @@ class DetectBase(XDetectBase):
++        turn_id = OCR.EN.ocrInt(dst)
++        return turn_id
+ class XDetectJP(XDetectBase):
+     tmpl=IMG_JP
+     ocr=OCR.JA
+@@ -222,7 +449,7 @@ class DetectBase(XDetectBase):
      def __init__(self,anteLatency=.1,postLatency=0):
          schedule.sleep(anteLatency)
          super().__init__()
@@ -463,10 +437,10 @@ index 3335559..ca21217 100644
      def _compare(self,*args,**kwargs):return super()._compare(*args,**kwargs)and fuse.reset(self)
      def _find(self,*args,**kwargs):
 diff --git a/FGO-py/fgoFuse.py b/FGO-py/fgoFuse.py
-index 9e67142..51a1e9e 100644
+index 9e67142..6f0ce7e 100644
 --- a/FGO-py/fgoFuse.py
 +++ b/FGO-py/fgoFuse.py
-@@ -1,19 +1,59 @@
+@@ -1,19 +1,63 @@
 +import time
 +
  from fgoLogging import getLogger
@@ -498,9 +472,11 @@ index 9e67142..51a1e9e 100644
 +                print(datetime.datetime.now(), "try to avoid fuse with key press")
 +                fgoDevice.device.press('\x08')
 +            elif offset == 2:
++                fgoDevice.device.press('Y')
 +                fgoDevice.device.press('K')
 +            elif offset == 3:
 +                time.sleep(50)
++                fgoDevice.device.press('Y')
 +                fgoDevice.device.press('J')
 +            elif 4 <= offset <= 9:
 +                time.sleep(5)
@@ -518,8 +494,10 @@ index 9e67142..51a1e9e 100644
 +                if step % 2 == 0:
 +                    fgoDevice.device.press('\x08')
 +                elif step % 2 == 1:
++                    fgoDevice.device.press('Y')
 +                    fgoDevice.device.press('K')
 +                elif step % 2 == 0:
++                    fgoDevice.device.press('Y')
 +                    fgoDevice.device.press('J')
 +            elif offset > 30:
 +                detect.save(name="FuseFinal")
@@ -531,7 +509,7 @@ index 9e67142..51a1e9e 100644
      def reset(self,detect=None):
          self.value=0
 diff --git a/FGO-py/fgoGui.py b/FGO-py/fgoGui.py
-index 5a044e9..ae6f6f0 100644
+index 5a044e9..5fb93a6 100644
 --- a/FGO-py/fgoGui.py
 +++ b/FGO-py/fgoGui.py
 @@ -49,6 +49,7 @@ class MainWindow(QMainWindow,Ui_fgoMainWindow):
@@ -542,7 +520,7 @@ index 5a044e9..ae6f6f0 100644
              ('closeToTray',self.MENU_CONTROL_TRAY,None),
              ('stayOnTop',self.MENU_CONTROL_STAYONTOP,lambda x:(self.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint,x),self.show())),
              ('notifyEnable',self.MENU_CONTROL_NOTIFY,None),
-@@ -180,6 +181,14 @@ class MainWindow(QMainWindow,Ui_fgoMainWindow):
+@@ -180,6 +181,15 @@ class MainWindow(QMainWindow,Ui_fgoMainWindow):
          self.MENU_CONTROL_MAPKEY.setChecked(False)
      def runMain(self):
          self.operation.battleClass=fgoKernel.Battle
@@ -552,6 +530,7 @@ index 5a044e9..ae6f6f0 100644
 +        self.operation.friendClassScoreAtLeast=self.config.get("friendClassScoreAtLeast", [])
 +        self.operation.friendHouguAtLeast=self.config.get("friendHouguAtLeast", 0)
 +        self.operation.friendAllowedReisous=self.config.get("friendAllowedReisous", [])
++        self.operation.friendRequireKizunaReisou=self.config.get("friendRequireKizunaReisou", False)
 +        self.operation.friendRequireKizunaReisouToNP=self.config.get("friendRequireKizunaReisouToNP", False)
 +
          self.runFunc(self.operation)
@@ -571,7 +550,7 @@ index 234771d..a39059d 100644
          self.ends=ends
          self.listener=DirListener(path)
 diff --git a/FGO-py/fgoKernel.py b/FGO-py/fgoKernel.py
-index 368b46f..5e670d7 100644
+index edb952e..27821ee 100644
 --- a/FGO-py/fgoKernel.py
 +++ b/FGO-py/fgoKernel.py
 @@ -17,10 +17,12 @@
@@ -588,7 +567,7 @@ index 368b46f..5e670d7 100644
  import fgoDevice
  from itertools import permutations
  from functools import wraps
-@@ -402,12 +404,259 @@ class Turn:
+@@ -414,12 +416,258 @@ class Turn:
          else:fgoDevice.device.perform('\x08',(700,))
          while not Detect().isTurnBegin():pass
          Detect(.5)
@@ -845,17 +824,17 @@ index 368b46f..5e670d7 100644
 +    def getNP(self): return [Detect.cache.getFieldServantNp(i) for i in range(3)]
 +    def getServantHP(self): return [Detect.cache.getFieldServantHp(i)if self.servant[i][0]else 999999 for i in range(3)]
 +
-+
  class Battle:
      def __init__(self,turnClass=Turn):
          self.turn=0
-@@ -450,10 +699,20 @@ class Battle:
+@@ -462,10 +710,22 @@ class Battle:
  class Main:
      teamIndex=0
      autoFormation=False
 -    def __init__(self,appleTotal=0,appleKind=0,battleClass=Battle):
 +    def __init__(self, appleTotal=0, appleKind=0, battleClass=Battle, waitForAp=True, battleTotal=0,
-+                 friendClassScoreAtLeast=None, friendHouguAtLeast=None, friendAllowedReisous=[], friendRequireKizunaReisouToNP=None):
++                 friendClassScoreAtLeast=None, friendHouguAtLeast=None, friendAllowedReisous=[],
++                 friendRequireKizunaReisou=False, friendRequireKizunaReisouToNP=False):
          self.appleTotal=appleTotal
          self.appleKind=appleKind
          self.battleClass=battleClass
@@ -866,12 +845,13 @@ index 368b46f..5e670d7 100644
 +        self.friendClassScoreAtLeast = friendClassScoreAtLeast
 +        self.friendHouguAtLeast = friendHouguAtLeast
 +        self.friendAllowedReisous = friendAllowedReisous
++        self.friendRequireKizunaReisou = friendRequireKizunaReisou
 +        self.friendRequireKizunaReisouToNP = friendRequireKizunaReisouToNP
 +
      @serialize(mutex)
      def __call__(self,questIndex=0,battleTotal=None):
          self.prepare()
-@@ -461,7 +720,7 @@ class Main:
+@@ -473,7 +733,7 @@ class Main:
              self.battleProc=self.battleClass()
              while True:
                  if Detect(.3,.3).isMainInterface():
@@ -880,7 +860,7 @@ index 368b46f..5e670d7 100644
                      fgoDevice.device.press('84L'[questIndex])
                      questIndex=0
                      if Detect(1.2).isBattleContinue():fgoDevice.device.press('K')
-@@ -469,19 +728,38 @@ class Main:
+@@ -481,19 +741,40 @@ class Main:
                          fgoDevice.device.press('J')
                          return logger.info('No Storm Pot')
                      if Detect(.7,.3).isApEmpty()and not self.eatApple():return logger.info('Ap Empty')
@@ -888,6 +868,7 @@ index 368b46f..5e670d7 100644
 +                    self.chooseFriend(classScoresAtLeast=self.friendClassScoreAtLeast,
 +                                      houguAtLeast=self.friendHouguAtLeast,
 +                                      allowedReisous=self.friendAllowedReisous,
++                                      requireKizunaReisou=self.requireKizunaReisou,
 +                                      requireKizunaReisouToNP=self.friendRequireKizunaReisouToNP)
                      while not Detect(0,.3).isBattleFormation():pass
                      if self.teamIndex and Detect.cache.getTeamIndex()+1!=self.teamIndex:fgoDevice.device.perform('\x70\x71\x72\x73\x74\x75\x76\x77\x78\x79\x7A\x7B\x7C\x7D\x7E'[self.teamIndex-1],(1000,))
@@ -901,7 +882,7 @@ index 368b46f..5e670d7 100644
                          return logger.info('Operation Unit Completed')
 +                    if self.waitForAp:
 +                        try:
-+                            ap_to_consume, ap_current, ap_full = Detect(.7,.3).getAP()
++                            ap_to_consume, ap_current, ap_full = Detect(.7,.3).getApAfterBattle()
 +                            print(datetime.datetime.now(), "AP to consume:", ap_to_consume, "current AP:", ap_current, "full AP:", ap_full)
 +                            if not self.appleTotal and ap_current < ap_to_consume:
 +                                print("plan to sleep for", (ap_to_consume-ap_current)*5, "minutes")
@@ -910,7 +891,7 @@ index 368b46f..5e670d7 100644
 +                                    fgoDevice.device.perform('\xBB',(2100,))
 +                                    time.sleep(60)
 +                        except:
-+                            print("error in getAP(), continue directly")
++                            print("error in getApAfterBattle(), continue directly")
 +                            traceback.print_exc()
                      fgoDevice.device.press('K')
                      if Detect(.7,.3).isApEmpty()and not self.eatApple():return logger.info('Ap Empty')
@@ -918,20 +899,21 @@ index 368b46f..5e670d7 100644
 +                    self.chooseFriend(classScoresAtLeast=self.friendClassScoreAtLeast,
 +                                      houguAtLeast=self.friendHouguAtLeast,
 +                                      allowedReisous=self.friendAllowedReisous,
++                                      requireKizunaReisou=self.friendRequireKizunaReisou,
 +                                      requireKizunaReisouToNP=self.friendRequireKizunaReisouToNP)
                      schedule.sleep(6)
                      break
                  elif Detect.cache.isSkillCastFailed():
-@@ -528,7 +806,7 @@ class Main:
-         self.appleTotal-=1
+@@ -541,7 +822,7 @@ class Main:
+         logger.warning('Eat Apple')
          return self.appleTotal+1
      @logit(logger,logging.INFO)
 -    def chooseFriend(self):
-+    def chooseFriend(self, classScoresAtLeast=None, houguAtLeast=None, allowedReisous=[], requireKizunaReisouToNP=False):
++    def chooseFriend(self, classScoresAtLeast=None, houguAtLeast=None, allowedReisous=[], requireKizunaReisou=False, requireKizunaReisouToNP=False):
          refresh=False
          while not Detect(0,.3).isChooseFriend():
              if Detect.cache.isNoFriend():
-@@ -536,12 +814,12 @@ class Main:
+@@ -549,12 +830,12 @@ class Main:
                  fgoDevice.device.perform('\xBAK',(500,1000))
                  refresh=True
                  continue
@@ -942,11 +924,11 @@ index 368b46f..5e670d7 100644
              timer=time.time()
              while True:
 -                for i in(i for i,j in friendImg.items()if(lambda pos:pos and(fgoDevice.device.touch(pos),True)[-1])(Detect.cache.findFriend(j))):
-+                for i in(i for i,j in friendImg.items() if (lambda pos:pos and(fgoDevice.device.touch(pos),True)[-1])(Detect.cache.findFriend(j, classScoresAtLeast, houguAtLeast, allowedReisous, requireKizunaReisouToNP))):
++                for i in(i for i,j in friendImg.items() if (lambda pos:pos and(fgoDevice.device.touch(pos),True)[-1])(Detect.cache.findFriend(j, classScoresAtLeast, houguAtLeast, allowedReisous, requireKizunaReisou, requireKizunaReisouToNP))):
                      ClassicTurn.friendInfo=(lambda r:(lambda p:[
                          [[-1 if p[i*4+j]=='X'else int(p[i*4+j],16)for j in range(4)]for i in range(3)],
                          [-1 if p[i+12]=='X'else int(p[i+12],16)for i in range(2)],
-@@ -553,7 +831,9 @@ class Main:
+@@ -566,7 +847,9 @@ class Main:
              if refresh:schedule.sleep(max(0,timer+10-time.time()))
              fgoDevice.device.perform('\xBAK',(500,1000))
              refresh=True
