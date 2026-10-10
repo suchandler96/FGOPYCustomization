@@ -144,9 +144,18 @@ index 7fb5e4d..e9c1e22 100644
  'closeToTray':False,
  'notifyEnable':False,
 diff --git a/FGO-py/fgoDetect.py b/FGO-py/fgoDetect.py
-index 1f70686..8acfeed 100644
+index 1f70686..20efed6 100644
 --- a/FGO-py/fgoDetect.py
 +++ b/FGO-py/fgoDetect.py
+@@ -3,7 +3,7 @@ from functools import reduce,wraps
+ from fgoConst import PACKAGE_TO_REGION
+ from fgoFuse import fuse
+ from fgoLogging import getLogger,logMeta
+-from fgoMetadata import servantData,servantImg,classImg,materialImg,chapterImg,mapImg,questImg
++from fgoMetadata import servantData,servantImg,classImg,materialImg,chapterImg,mapImg,questImg,grandImg
+ from fgoOcr import Ocr
+ from fgoSchedule import schedule
+ logger=getLogger('Detect')
 @@ -45,6 +45,9 @@ class XDetectBase(metaclass=logMeta(logger)):
                  try:return func(self,*args,**kwargs)
                  except err:pass
@@ -266,11 +275,12 @@ index 1f70686..8acfeed 100644
      def getSummonHistory(self):XDetectBase._summonHistory=self._stack(XDetectBase._summonHistory,cv2.threshold(cv2.cvtColor(self._crop((147,157,1105,547)),cv2.COLOR_BGR2GRAY),128,255,cv2.THRESH_BINARY)[1],80)
      @classmethod
      def getSummonHistoryCount(cls):return cls.__new__(cls).inject(XDetectBase._summonHistory)._count((cls.tmpl.SUMMONHISTORY[0][...,0],cls.tmpl.SUMMONHISTORY[1]),(28,0,60,XDetectBase._summonHistory.shape[0]),.7)
-@@ -177,7 +259,139 @@ class XDetectBase(metaclass=logMeta(logger)):
+@@ -177,7 +259,150 @@ class XDetectBase(metaclass=logMeta(logger)):
      def getTeamServantClassRank(self):return[(lambda x:x if x is None else classImg[0][x])(self._select(CLASS[100],(30+200*i+15*(i>2),133,115+200*i+15*(i>2),203)))for i in range(6)]
      def getWeeklyMission(self):XDetectBase._weeklyMission=self._stack(XDetectBase._weeklyMission,self._crop((603,250,1092,710)),157)
      def findChapter(self,chapter):return self._find((chapterImg[chapter],None),(640,90,1230,600))
 -    def findFriend(self,img):return self._find(img,(13,166,1233,720),.04)
++    def findGrandBattle(self,grandbattle):return self._find((grandImg[grandbattle],None),(50,320,140,450))
 +    def findFriend(self, img, classScoresAtLeast=None, houguAtLeast=None, allowedReisous=[], requireKizunaReisou=False, requireKizunaReisouToNP=False):
 +        # an example of allowed_reisous: allowed_reisous=["KIZUNA10", "KIZUNA15", "KIZUNAORDEREDFEMALE", "KIZUNAORDEREDKIND", "KIZUNACLOTHES"]
 +        if not classScoresAtLeast and not houguAtLeast and not allowedReisous and not requireKizunaReisou and not requireKizunaReisouToNP:
@@ -302,6 +312,16 @@ index 1f70686..8acfeed 100644
 +            if (raw_pos := self._find(img,(13,servant_y_range[0]-10,1233,servant_y_range[1]+10), .06)) is None:
 +                continue
 +            # print("potential servant match:")
++
++            # # match olgamarie Name
++            # match_name_region = (473 if is_grand_battle else 331, servant_y_range[0] + 85, 750, servant_y_range[0] + 130)
++            # olgamarie_name_pos = self._gray_find(self.tmpl.OLGAMARIE12NAME, match_name_region, .6)
++            # print("matching servant name:")
++            # if not olgamarie_name_pos:
++            #     print("servant name doesn't match!")
++            #     continue
++            # else:
++            #     print("servant name match.")
 +
 +            if houguAtLeast:
 +                match_lvl_region = (420, servant_y_range[0] + 120, 784, servant_y_range[0] + 168)   # depends on whether a message exists...
@@ -407,7 +427,7 @@ index 1f70686..8acfeed 100644
      def findMail(self,img):return self._find(img,(73,166,920,720),.017)
      def findMapCamera(self,chapter):return numpy.array(cv2.minMaxLoc(cv2.matchTemplate(mapImg[chapter],cv2.resize(self._crop((200,200,1080,520)),(0,0),fx=.3,fy=.3,interpolation=cv2.INTER_CUBIC),cv2.TM_SQDIFF_NORMED))[2])/.3+(440,160)
      @classmethod
-@@ -206,6 +420,19 @@ class XDetectCN(XDetectBase):
+@@ -206,6 +431,19 @@ class XDetectCN(XDetectBase):
                  mission=''
              else:mission+=i
          return result
@@ -427,7 +447,7 @@ index 1f70686..8acfeed 100644
  class XDetectJP(XDetectBase):
      tmpl=IMG_JP
      ocr=OCR.JA
-@@ -222,7 +449,7 @@ class DetectBase(XDetectBase):
+@@ -222,7 +460,7 @@ class DetectBase(XDetectBase):
      def __init__(self,anteLatency=.1,postLatency=0):
          schedule.sleep(anteLatency)
          super().__init__()
@@ -436,11 +456,30 @@ index 1f70686..8acfeed 100644
          schedule.sleep(postLatency)
      def _compare(self,*args,**kwargs):return super()._compare(*args,**kwargs)and fuse.reset(self)
      def _find(self,*args,**kwargs):
+diff --git a/FGO-py/fgoDevice.py b/FGO-py/fgoDevice.py
+index 92541a2..cbfe833 100644
+--- a/FGO-py/fgoDevice.py
++++ b/FGO-py/fgoDevice.py
+@@ -47,6 +47,14 @@ class Device:
+     def available(self):return self.I.available and(self.I is self.O or self.O.available)
+     def perform(self,pos,wait):[(self.press(i),schedule.sleep(j*.001))for i,j in zip(pos,wait)]
+     def touch(self,pos,wait=0):(self.I.touch(pos),schedule.sleep(wait*.001))
++    def returnHomeAndClearFGOBackgroundAndRestart(self):
++        self.I.adb.shell("input keyevent 3")
++        import time
++        time.sleep(5)
++        self.I.adb.shell("am force-stop " + self.I.package)
++        time.sleep(5)
++        self.I.adb.shell("am start -n " + self.I.package + "/.EmptyClass")
++        time.sleep(5)
+     enumDevices=Android.enumDevices
+     def __getattr__(self,attr):return getattr(self.I,attr,getattr(self.O,attr))
+ 
 diff --git a/FGO-py/fgoFuse.py b/FGO-py/fgoFuse.py
-index 9e67142..6f0ce7e 100644
+index 9e67142..7c64ff0 100644
 --- a/FGO-py/fgoFuse.py
 +++ b/FGO-py/fgoFuse.py
-@@ -1,19 +1,63 @@
+@@ -1,22 +1,84 @@
 +import time
 +
  from fgoLogging import getLogger
@@ -459,59 +498,98 @@ index 9e67142..6f0ce7e 100644
          self.log=[None]*logsize
          self.logptr=0
 -    def increase(self):
++        self.rebooted=False
++        self.reenter_pressed=False
 +    def increase(self, detect=None):
          logger.debug(f'{self.value}')
          if self.value>self.max:
 -            self.save()
 -            raise ScriptStop('Fused')
-+            offset = self.value - self.max
-+            # Spread key presses across frames so screenshots & detection run between presses.
-+            # This lets detection observe whether the device responded and call reset() if so.
-+            if offset == 1:
-+                detect.save(name="FuseBeforePress_0")
-+                print(datetime.datetime.now(), "try to avoid fuse with key press")
-+                fgoDevice.device.press('\x08')
-+            elif offset == 2:
-+                fgoDevice.device.press('Y')
-+                fgoDevice.device.press('K')
-+            elif offset == 3:
-+                time.sleep(50)
-+                fgoDevice.device.press('Y')
-+                fgoDevice.device.press('J')
-+            elif 4 <= offset <= 9:
-+                time.sleep(5)
-+                # One K press every other frame (~0.2+ sec gap) for 6 rounds
-+                if (offset - 4) % 2 == 0:
-+                    detect.save(name="FuseBeforePress_" + str(offset - 3))
-+                    fgoDevice.device.press('K')
-+            elif offset == 10:
++            if not self.rebooted:
++                fgoDevice.device.returnHomeAndClearFGOBackgroundAndRestart()
 +                fgoDevice.device = fgoDevice.Device(fgoDevice.device.name)
-+            elif 11 <= offset <= 16:
-+                time.sleep(5)
-+                # Second phase: BACK + K + J, one key every other frame
-+                step = offset - 11
-+                detect.save(name="FuseBeforeHandle_" + str(step))
-+                if step % 2 == 0:
-+                    fgoDevice.device.press('\x08')
-+                elif step % 2 == 1:
-+                    fgoDevice.device.press('Y')
++                self.rebooted=True
++            else:
++                if not self.reenter_pressed:
++                    if detect.isBattleContinue():
++                        self.reenter_pressed=True
 +                    fgoDevice.device.press('K')
-+                elif step % 2 == 0:
-+                    fgoDevice.device.press('Y')
-+                    fgoDevice.device.press('J')
-+            elif offset > 30:
-+                detect.save(name="FuseFinal")
++                time.sleep(5)
++            if self.value > self.max + 720:
 +                traceback.print_stack()
 +                raise ScriptStop('Fused')
-+            # else: offset 17~30 â€” let detection try to recover naturally
++
++            # offset = self.value - self.max
++            # # Spread key presses across frames so screenshots & detection run between presses.
++            # # This lets detection observe whether the device responded and call reset() if so.
++            # if offset == 1:
++            #     detect.save(name="FuseBeforePress_0")
++            #     print(datetime.datetime.now(), "try to avoid fuse with key press")
++            #     fgoDevice.device.press('\x08')
++            # elif offset == 2:
++            #     # fgoDevice.device.press('Y')
++            #     fgoDevice.device.press('K')
++            # elif offset == 3:
++            #     time.sleep(50)
++            #     # fgoDevice.device.press('Y')
++            #     fgoDevice.device.press('J')
++            # elif 4 <= offset <= 9:
++            #     time.sleep(5)
++            #     # One K press every other frame (~0.2+ sec gap) for 6 rounds
++            #     if (offset - 4) % 2 == 0:
++            #         detect.save(name="FuseBeforePress_" + str(offset - 3))
++            #         fgoDevice.device.press('K')
++            # elif offset == 10:
++            #     fgoDevice.device = fgoDevice.Device(fgoDevice.device.name)
++            # elif 11 <= offset <= 16:
++            #     time.sleep(5)
++            #     # Second phase: BACK + K + J, one key every other frame
++            #     step = offset - 11
++            #     detect.save(name="FuseBeforeHandle_" + str(step))
++            #     if step % 2 == 0:
++            #         fgoDevice.device.press('\x08')
++            #     elif step % 2 == 1:
++            #         fgoDevice.device.press('Y')
++            #         fgoDevice.device.press('K')
++            #     elif step % 2 == 0:
++            #         fgoDevice.device.press('Y')
++            #         fgoDevice.device.press('J')
++            # elif offset > 30:
++            #     detect.save(name="FuseFinal")
++            #     traceback.print_stack()
++            #     raise ScriptStop('Fused')
++            # # else: offset 17~30 â€” let detection try to recover naturally
 +
          self.value+=1
      def reset(self,detect=None):
          self.value=0
++        self.rebooted=False
++        self.reenter_pressed=False
+         if detect is not None and detect is not self.log[(self.logptr-1)%self.logsize]:
+             self.log[self.logptr]=detect
+             self.logptr=(self.logptr+1)%self.logsize
 diff --git a/FGO-py/fgoGui.py b/FGO-py/fgoGui.py
-index 5a044e9..5fb93a6 100644
+index 5a044e9..674f1a9 100644
 --- a/FGO-py/fgoGui.py
 +++ b/FGO-py/fgoGui.py
+@@ -8,7 +8,7 @@ import fgoDevice
+ import fgoKernel
+ from fgoMainWindow import Ui_fgoMainWindow
+ from fgoGuiTeamup import Teamup
+-from fgoMetadata import quest
++from fgoMetadata import quest,grandQuest
+ logger=fgoKernel.getLogger('Gui')
+ pyplot.ion()
+ 
+@@ -40,7 +40,7 @@ class MainWindow(QMainWindow,Ui_fgoMainWindow):
+         self.signalFuncBegin.connect(self.funcBegin)
+         self.signalFuncEnd.connect(self.funcEnd)
+         self.operation=fgoKernel.Operation()
+-        self.chapter=sorted({i[:2]for i in quest})
++        self.chapter=sorted({i[:2]for i in quest})+[(99,)]
+         self.CBB_CHAPTER.addItems(QApplication.translate('quest','-'.join(str(j)for j in i))for i in self.chapter)
+         self.worker=Thread()
+         self.config=config
 @@ -49,6 +49,7 @@ class MainWindow(QMainWindow,Ui_fgoMainWindow):
              (False,self.CKB_TEAM,lambda x:setattr(fgoKernel.Main,'autoFormation',x)),
              ('stopOnDefeated',self.MENU_SETTINGS_DEFEATED,fgoKernel.schedule.stopOnDefeated),
@@ -520,6 +598,15 @@ index 5a044e9..5fb93a6 100644
              ('closeToTray',self.MENU_CONTROL_TRAY,None),
              ('stayOnTop',self.MENU_CONTROL_STAYONTOP,lambda x:(self.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint,x),self.show())),
              ('notifyEnable',self.MENU_CONTROL_NOTIFY,None),
+@@ -114,7 +115,7 @@ class MainWindow(QMainWindow,Ui_fgoMainWindow):
+         self.TXT_APPLE.setValue(self.operation.appleTotal)
+         cur=self.LST_QUEST.currentRow()
+         self.LST_QUEST.clear()
+-        self.LST_QUEST.addItems(f'{i:2}.{k:5}Ã— {QApplication.translate("quest","-".join(str(m)for m in j[:2]))}=={QApplication.translate("quest","-".join(str(m)for m in j))}'for i,(j,k)in enumerate(self.operation))
++        self.LST_QUEST.addItems(f'{i:2}.{k:5}Ã— {QApplication.translate("quest","-".join(str(m)for m in (j[:1]if j[0]==99 else j[:2])))}=={QApplication.translate("quest","-".join(str(m)for m in j))}'for i,(j,k)in enumerate(self.operation))
+         self.LST_QUEST.setCurrentRow(cur)
+     def funcBegin(self):
+         self.BTN_MAIN.setEnabled(False)
 @@ -180,6 +181,15 @@ class MainWindow(QMainWindow,Ui_fgoMainWindow):
          self.MENU_CONTROL_MAPKEY.setChecked(False)
      def runMain(self):
@@ -536,6 +623,273 @@ index 5a044e9..5fb93a6 100644
          self.runFunc(self.operation)
      def runBattle(self):self.runFunc(fgoKernel.Battle())
      def runClassic(self):
+@@ -239,7 +249,7 @@ class MainWindow(QMainWindow,Ui_fgoMainWindow):
+         try:exec(s)
+         except BaseException as e:logger.exception(e)
+     def questQuery(self,index):
+-        self.quest=[i for i in quest if i[:2]==self.chapter[index]]
++        self.quest=[i for i in quest+grandQuest if i[:len(self.chapter[index])]==self.chapter[index]]
+         self.CBB_QUEST.clear()
+         self.CBB_QUEST.addItems(QApplication.translate('quest','-'.join(str(j)for j in i))for i in self.quest)
+     def questAdd(self):
+diff --git a/FGO-py/fgoI18n.en.qm b/FGO-py/fgoI18n.en.qm
+index cf5cd82..1bd7424 100644
+--- a/FGO-py/fgoI18n.en.qm
++++ b/FGO-py/fgoI18n.en.qm
+@@ -1,11 +1,11 @@
+-<¸dÊïœ•Í!¿`¡½İ§   en_USB  ˜  3   ,W  4   ,Œ  4  ,µ  4  ,à  4  -	  4  -4  4  -]  4  -˜  4  -Ã  5   -ò  5  .  5  .J  5  .u  6   .œ  6  .Ë  6  /  6  /-  6  /b  6  /  6  /º  6  /ñ  7   0(  7  0W  8   0~  8  0±  ğ  ¨  ñy  |  ò  +  òÌ  +L  òæ  +}  ób  +ê  ó¦  E ñ  'Z W„   ‘ a:|   ¼FÑ  7 Õ0ë  Dÿ˜    “r  wï¿e  	&õjL  &t÷Àç  À  "J­o  .7  ‹>Š   ™…½‡  ­¸  CÑÄg  5ß­Ÿ  éx  `A  $|Ş&  3OœŸ  L¹·  Ó­×  •ß"¥  
++<¸dÊïœ•Í!¿`¡½İ§   en_USB     É  0â  3   ,W  4   ,Œ  4  ,µ  4  ,à  4  -	  4  -4  4  -]  4  -˜  4  -Ã  5   -ò  5  .  5  .J  5  .u  6   .œ  6  .Ë  6  /  6  /-  6  /b  6  /  6  /º  6  /ñ  7   0(  7  0W  8   0~  8  0±  ğ  ¨  ñy  |  ò  +  òÌ  +L  òæ  +}  ób  +ê  ó¦  E ñ  'Z W„   ‘ a:|   ¼FÑ  7 Õ0ë  Dÿ˜    “r  wï¿e  	&õjL  &t÷Àç  À  "J­o  .7  ‹>Š   ™…½‡  ­¸  CÑÄg  5ß­Ÿ  éx  `A  $|Ş&  3OœŸ  L¹·  Ó­×  •ß"¥  
+ ág  *˜÷/8   A^W  ïŠ%°  mİ  ÷rL  Øµ  ÔØöw  "ãé½  	Âò0V   Å |O  (ø O{  )O@¬È  cH?h  ÅÜ‡  GÎCç  (‹ã#  Òw  iğ­  ’ô¥9  8üM  S	`·  %¦pí  ¡€_  ¤é  =ò€w  [	¦Òg  'Ö	½#'  ä	è¬q  
+ ë	ó†  £	ü*«  
+ Üç  ¦
+ 1o  ;
+ HİO  'Œ
+ ş{  #¦"}  6%{ç  !Ü?õ¤  qÇ  ÒèqÕ  !Rÿ¾Ğ  !£ dj  Ú)d"  ,>’  $¶KDI  ½’©`  îĞÀ  	ğáEh  qúÎ  #d(½  ,nX  *W¯H	  *Ó_•  íÕ/  “  	8,§  ³:‘í  +®Ş@õ  áq  á .  ‹âó4  ºón  õÎˆ   ù^6  "ş~+  	fÿ`f  "…’+  d¢+  šï¾  "µ/ù  #0°…  	Àh  ëp&  	•­f  %b    $J1o  :€|  (YV  Bî*  †î*  *ïĞ‘  b Ã~  9!BJ  $ú!¡/  %,%ñ"  &6S  '*:ÏÇ  ) :Ó~  )ÔŸ9\  
+-næw  &>i  0â    5   C N Y   m o n t h l y       5Bå¸åˆ¸   
++næw  &>i  1    5   C N Y   m o n t h l y       5Bå¸åˆ¸   
+ MainWindow    B i l i b i l i   b i g V I P       Bç«™å¤§ä¼šå‘˜æ¯æœˆ   
+ MainWindow    Q Q   g r o u p       QQç¾¤   
+ MainWindow    c o m p l e t e d       ä¸­å®Œæˆäº†   
+@@ -55,5 +55,4 @@ MainWindow   
+  A p p l e       è‹¹æœ   fgoMainWindow   * S t o p   o n   b o n d   e s s e n c e s       !è·å¾—ç¾ç»Šç¤¼è£…æ—¶ç»ˆæ­¢æˆ˜æ–—   fgoMainWindow     N u m b e r   o f   a p p l e s       è¦åƒçš„è‹¹æœæ•°é‡   fgoMainWindow    K i n d   o f   a p p l e       è¦åƒçš„è‹¹æœç§ç±»   fgoMainWindow    D e v i c e       è®¾å¤‡   fgoMainWindow    S e t t i n g s       è®¾ç½®   fgoMainWindow    A d j u s t   t o   1 6 : 9       è°ƒæ•´ä¸º16:9   fgoMainWindow    E x p l o r e r       èµ„æºç®¡ç†å™¨   fgoMainWindow   & C o n n e c t   t o   a   d e v i c e       è¿æ¥åˆ°è®¾å¤‡   fgoMainWindow    E x i t       é€€å‡º   fgoMainWindow    G o l d       é‡‘   fgoMainWindow    C o p p e r       é“œ   fgoMainWindow    S i l v e r       é“¶   fgoMainWindow    C l a s s i c       é™ˆå¹´è€è‚   fgoMainWindow    B r o n z e       é’   fgoMainWindow    A p p o i n t       é¢„çº¦ç»ˆæ­¢   fgoMainWindow    C h a l d e a   G a t e       0-0   quest    F u y u k i       1-0   quest    O r l e a n s       1-1   quest    S e p t e m       1-2   quest    O k e a n o s       1-3   quest    L o n d o n       1-4   quest    E   P l u r i b u s   U n u m       1-5   quest    C a m e l o t       1-6   quest    B a b y l o n i a       1-7   quest    S h i n j u k u       2-0   quest    A g a r t h a       2-1   quest    S h i m o s a       2-2   quest   
+  S a l e m       2-3   quest    A n a s t a s i a       3-0   quest    G ö t t e r d ä m m e r u n g       3-1   quest   
+  S   I   N       3-2   quest    Y u g a   K s h e t r a       3-3   quest    A t l a n t i s       3-4   quest    O l y m p u s       3-5   quest    A v a l o n   l e   F a e       3-6   quest    N a h u i   M i c t l a n       3-7   quest    H e i a n - k yM       4-0   quest   
+- T r a u m       4-1   quest    O r d e a l   C a l l       5-0   quest    P a p e r   M o o n       5-1   quest/  Z —                                                                                                                                                                                                                                                                                                            Teamup questfgoMainWindow
+-MainWindow ˆ   
+\ No newline at end of file
++ T r a u m       4-1   quest    O r d e a l   C a l l       5-0   quest    P a p e r   M o o n       5-1   quest    G r a n d   B a t t l e       99   questˆ   
+\ No newline at end of file
+diff --git a/FGO-py/fgoI18n.en.ts b/FGO-py/fgoI18n.en.ts
+index 576af50..747a3a6 100644
+--- a/FGO-py/fgoI18n.en.ts
++++ b/FGO-py/fgoI18n.en.ts
+@@ -887,5 +887,9 @@
+       <source>5-1</source>
+       <translation>Paper Moon</translation>
+     </message>
++    <message>
++      <source>99</source>
++      <translation>Grand Battle</translation>
++    </message>
+   </context>
+ </TS>
+diff --git a/FGO-py/fgoI18n.ja.qm b/FGO-py/fgoI18n.ja.qm
+index 628eb7b..fdc9be5 100644
+--- a/FGO-py/fgoI18n.ja.qm
++++ b/FGO-py/fgoI18n.ja.qm
+@@ -1,68 +1,68 @@
+-<¸dÊïœ•Í!¿`¡½İ§   ja_JPB  P  3   .*  4   .„  4  0+  4  1ô  4  3ñ  4  6#  4  7ù  4  :Œ  4  <ñ  5   ?H  5  A  5  C*  5  Dº  6   F£  6  IZ  6  Km  6  MH  6  O!  6  PÙ  6  Rè  6  Uñ  7   Xü  7  [1  8   ^  8  a®  ğ    ñy  †  òÌ  !•  òæ  !¼  ó¦  
+-P ñ  ˆ ,[|  +A 0A`  G\ 0Ap  Y› 0A€  ^Í 0A  _ 0B`  G0 0Bp  Yq 0B€  ^ 0F€  _± 0G`  G¸ 0G€  _{ 0H`  GŒ 0Hp  YÃ 0H€  _G 3   .U @AP  Aº @Ap  [Ö @BP  A @B`  Iç @Bp  [¨ @B€  b/ @Ep  \Œ @Fp  \` @Gp  \0 @Hp  \ PB@  2m PB`  Kè W„   ‹ `B@  4f `BP  E3 a:|  	v €A@  8¸ €B@  8ˆ €B`  Qf €G@  9 €H@  8æ A@  ;5 A`  S¡ B@  ; B`  Su E`  Tc F`  T1 G@  ;… G`  Sû H@  ;_ H`  SÍ  A@  =”  A`  V¨  B@  =n  B`  Vz  E`  W^  F`  W2  G@  =è  G`  W  H@  =¾  H`  VÖ ¼FÑ  s Õ0ë  ×ÿ˜    ’E  "óAjµ  -|B  #Ç“r  iï¿e  ûõjL  Ö÷Àç  (À  8­o  ‚.7  s>Š  õhï  *Ñ…½‡  ­¸  ÄÑÄg  ÉÖÏœ  +
+-ß­Ÿ  oéx  nñËÅ  +rA  "Ş&   ìT  %”OœŸ  0Z¡õ  (Zd™ş  *1}1  & ¹·  õÓ­×  ß"¥  
+-!ág  !&äûb  )•÷/8   50  .¥0  .Ö0  /0  /80  /i0  /š	0  /Ë
+-0  /ü0  0R0  0{0  0ª0  0×0  0ş0  1%	0  1P
+-0  1{0  1 0  1Ë0  20  2F0  2™0  2È0  2÷0  3"	0  3I
+-0  3r0  3›0  3Æ^W  é0  40  4?0  40  4½0  4î0  5	0  5@
+-0  5i
+-1  5œ0  5Í0  5ö0  6H0  6{0  6¬0  6ã0  70  7?	0  7r
+-0  7£0  7Ì0  8.0  8]0  9:0  9c0  9Œ0  9µ	0  9Ü
+-0  :0  ::0  :c	0  :µ	0  :à	0  ;¯	0  ;Ø	0  ;ÿ	0  <(		0  <O	
+-0  <x	0  <£	0  <Ê
+-0  =
+-0  =E
+-0  >
+-0  >=
+-0  >b
+-0  >‡
+-	0  >¬
++<¸dÊïœ•Í!¿`¡½İ§   ja_JPB  x  É  dM  3   .Æ  4   /   4  0Ç  4  2  4  4  4  6¿  4  8•  4  ;(  4  =  5   ?ä  5  Aµ  5  CÆ  5  EV  6   G?  6  Iö  6  L	  6  Mä  6  O½  6  Qu  6  S„  6  V  7   Y˜  7  [Í  8   ^°  8  bJ  ğ  ¸  ñy  Ô  ò  !ã  òÌ  "
++  òæ  "1  ób  "  ó¦  
++y ñ  Ö ,[|  +İ 0A`  Gø 0Ap  Z7 0A€  _i 0A  _§ 0B`  GÌ 0Bp  Z 0B€  _9 0F€  `M 0G`  HT 0G€  ` 0H`  H( 0Hp  Z_ 0H€  _ã 3   .ñ @AP  BV @Ap  \r @BP  B* @B`  Jƒ @Bp  \D @B€  bË @Ep  ]( @Fp  \ü @Gp  \Ì @Hp  \ PB@  3	 PB`  L„ W„   ‹ `B@  5 `BP  EÏ a:|  	Ÿ €A@  9T €B@  9$ €B`  R €G@  9® €H@  9‚ A@  ;Ñ A`  T= B@  ;§ B`  T E`  Tÿ F`  TÍ G@  <! G`  T— H@  ;û H`  Ti  A@  >0  A`  WD  B@  >
++  B`  W  E`  Wú  F`  WÎ  G@  >„  G`  W¤  H@  >Z  H`  Wr ¼FÑ  Á Õ0ë   ÿ˜    ’E  #Ajµ  -¯|B  $c“r  ·ï¿e  $õjL  $÷Àç  vÀ  †­o  Ğ.7  Á>Š  Chï  +m…½‡  û¸  íÑÄg  ÖÏœ  +¦ß­Ÿ  ½éx  ¼ñËÅ  ,A  pŞ&  T  &0OœŸ  ~Z¡õ  (öd™ş  *Í}1  &œ¹·  CÓ­×  -ß"¥  
++Jág  !täûb  *1÷/8   50  /A0  /r0  /£0  /Ô0  00  06	0  0g
++0  0˜0  0î0  10  1F0  1s0  1š0  1Á	0  1ì
++0  20  2<0  2g0  2µ0  2â0  350  3d0  3“0  3¾	0  3å
++0  40  470  4b^W  70  4´0  4Û0  5,0  5Y0  5Š0  5³	0  5Ü
++0  6
++1  680  6i0  6’0  6ä0  70  7H0  70  7¨0  7Û	0  8
++0  8?0  8h0  8Ê0  8ù0  9Ö0  9ÿ0  :(0  :Q	0  :x
++0  :©0  :Ö0  :ÿ	0  ;Q	0  ;|	0  <K	0  <t	0  <›	0  <Ä		0  <ë	
++0  =	0  =?	0  =f
++0  =´
++0  =á
++0  >®
++0  >Ù
++0  >ş
++0  ?#
++	0  ?H
+ 
+-0  >Õ
+-0  >ü
+-0  ?#Lw  $Ëi”™  *›Š%°  
+-xİ  0÷rL  x0  ?i0  ?–0  ?Á0  ?è0  @0  @<	0  @i
+-0  @˜0  @Å0  @î0  A>0  Ag0  Aè0  B0  B80  B_	0  Bˆ
+-0  B¯0  BÚ0  C0  CM0  Ct0  C—0  Cº0  Cá0  D	0  D/	1  Db
+-0  D‘0  Dß0  E0  E[0  E‚0  E©0  EÔ	0  F
+-0  F*0  FU0  F|Ü‚  &aK_  )Ê‹ÉÉ  'ã¼QÇ  '¿!h  $œØµ  æØöw  ÇÛô  ,EãĞ£  #&é½  ò0V   » |O  È0  FÌ0  Fı0  Gè0  H0  H<0  Hq	0  H 
+-0  HÏ0  I0  I10  I‰0  I¾0  J0  JB0  Jm0  J˜	0  JÃ
+-0  Jò0  K0  KD0  K0  KÃ0  L0  L70  L`0  L‡	0  L®
+-0  LÕ0  Lü0  M#0  Mw0  M¬0  MÕ0  Mü0  N%0  NN	0  N}
+-0  N¨0  NÏ0  Nø0  OL0  O0  O¬0  OÕ0  P 0  P/	0  PZ
+-0  Pƒ0  P®0  Q0  Q90  Qš0  QÇ0  Qô0  R	0  RH
+-0  Ro0  R˜0  RÁ	0  S	0  SB	0  T“	0  TÂ	0  Tí	0  U		0  U=	
+-0  Uj	0  U™	0  UÈ
+-0  V 
+-0  VM
+-0  WŒ
+-0  W»
+-0  Wè
+-0  X
+-	0  XB
++0  ?q
++0  ?˜
++0  ?¿Lw  %gi”™  +7Š%°  
++¡İ  Y÷rL  ¡0  @0  @20  @]0  @„0  @¯0  @Ø	0  A
++0  A40  Aa0  AŠ0  AÚ0  B0  B„0  B­0  BÔ0  Bû	0  C$
++0  CK0  Cv0  CŸ0  Cé0  D0  D30  DV0  D}0  D¤	0  DË	1  Dş
++0  E-0  E{0  E¤0  E÷0  F0  FE0  Fp	0  FŸ
++0  FÆ0  Fñ0  GÜ‚  &ıK_  *f‹ÉÉ  (¼QÇ  '«¿!h  %8Øµ  4Øöw  Ûô  ,áãĞ£  #Âé½  ¶ò0V   » |O   0  Gh0  G™0  H„0  H­0  HØ0  I	0  I<
++0  Ik0  I0  IÍ0  J%0  JZ0  J³0  JŞ0  K	0  K4	0  K_
++0  K0  Kµ0  Kà0  L*0  L_0  L¬0  LÓ0  Lü0  M#	0  MJ
++0  Mq0  M˜0  M¿0  N0  NH0  Nq0  N˜0  NÁ0  Nê	0  O
++0  OD0  Ok0  O”0  Oè0  P0  PH0  Pq0  Pœ0  PË	0  Pö
++0  Q0  QJ0  Q0  QÕ0  R60  Rc0  R0  R·	0  Rä
++0  S0  S40  S]	0  Sµ	0  SŞ	0  U/	0  U^	0  U‰	0  U°		0  UÙ	
++0  V	0  V5	0  Vd
++0  V¼
++0  Vé
++0  X(
++0  XW
++0  X„
++0  X«
++	0  XŞ
+ 
+-0  Xu
+-0  X 
+-0  XÍ O{   )¥%  #@¬È  ÅH?h  û}6#  )`Ü‡  ñºÆ  &ÖÂgé  &¢ËÁ\  +èÎCç  u0  Y0  YH0  Yí0  Z0  Z=0  Zd	0  Z‹
+-0  Z´0  Zİ0  [0  [V0  [0  \¸0  \ß0  ]
+-0  ]3	0  ]`
+-0  ]0  ]¾0  ]éã#  gw  &ğ­  Ì%  'qëè5  &/ô¥9  ¢üM  n0  ^E0  ^r0  _ã1  `0  `W0  `Š0  `¿	0  `ê
+-0  a0  aH0  a{0  aÙ0  b0  b[0  b†0  b±0  bÜ	0  c
+-0  c.0  cY0  c†	`·  2pí  i÷  -ñ€_  ­"bÜ  "‰•Í¥  "QÃYÄ  %Ïè"$  #Vé  6ò€w  Ò	3d  ,	DÅU  $ı	ƒ%³  -Œ	–Ñ²  %,	¦Òg  ğ	¬µ  ,á	½#'  F	Ô]  (ù	è¬q  l	ó†  û	ü*«  s
+-Üç  Ü
+-'£5  (Œ
+-1o  -
+-;%u  )/
+-HİO  º
+-—ïÓ  -S
+-K„  '¨
+-¢¾¥  $d
+-ÜG±  *g
+-ş{  vzß  *"}  ê%{ç  Ö?õ¤  ¡qÇ  ³èqÕ  fÿ¾Ğ  ¥ dj  E;t  ,¬)d"  ">’  XJd  ( KDI  WRÕä  "»Y“…  ,’©`  tĞÀ  ¿áEh  úÎ  6 ’…  %k(½  Ğ,nX   åV  +¬”Z.  $¯H	   ¤Ó_•  =Õ/  ä  8,§  	$:‘í  !ãf€7  $7¨.  '@Ş@õ  ®áq  ™á .  %âó4  Hón  7õÎˆ  ûù^6  ş~+  7ÿ`f  k’+  †¢+  ¶ï¾  ›/ù  
+-p&  d­f  ø    ö1o  m€|  IV  Zî*  ûî*  !iĞ‘  ³ Ã~  _!BJ  ˜!¡/  Æ%ñ"  z6S  Z:ÏÇ   H:Ó~   xŸ9\  ·áô  -ÃÙñ  (Åæw  ¤i  c±    ( 5   C N Y )       5Bå¸åˆ¸   
++0  Y
++0  Y<
++0  Yi O{   U)¥%  $*@¬È  H?h  I}6#  )üÜ‡  ?ºÆ  'rÂgé  '>ËÁ\  ,„ÎCç  Ã0  Y»0  Yä0  Z‰0  Z²0  ZÙ0  [ 	0  ['
++0  [P0  [y0  [¢0  [ò0  \0  ]T0  ]{0  ]¦0  ]Ï	0  ]ü
++0  ^+0  ^Z0  ^…ã#  w  Oğ­  %  (ëè5  &Ëô¥9  ğüM  —0  ^á0  _0  `1  `¸0  `ó0  a&0  a[	0  a†
++0  aµ0  aä0  b0  bu0  b 0  b÷0  c"0  cM0  cx	0  c£
++0  cÊ0  cõ0  d"	`·  €pí  ·÷  .€_  Ö"bÜ  #%•Í¥  "íÃYÄ  &kè"$  #òé  _ò€w  û	3d  ,´	DÅU  %™	ƒ%³  .(	–Ñ²  %È	¦Òg  >	¬µ  -}	½#'  ”	Ô]  )•	è¬q  •	ó†  I	ü*«  Á
++Üç  *
++'£5  )(
++1o  {
++;%u  )Ë
++HİO  
++—ïÓ  -ï
++K„  (D
++¢¾¥  % 
++ÜG±  +
++ş{  Äzß  *"}  8%{ç  $?õ¤  ÊqÇ  ÜèqÕ  ´ÿ¾Ğ  ó dj  n;t  -H)d"  "·>’  ¦Jd  (¼KDI  ¥RÕä  #WY“…  -’©`  ÂĞÀ  èáEh  SúÎ  „ ’…  &(½  ,nX  !3V  ,H”Z.  $Ÿ¯H	   òÓ_•  ‹Õ/    +8,§  	M:‘í  "Xf€7  $Ó¨.  'ÜŞ@õ  ×áq  çá .  sâó4  –ón  `õÎˆ  $ù^6  Zş~+  `ÿ`f  ¹’+  Ô¢+  ï¾  é/ù  X°…   ì	Àh  «p&  ­f  F    D1o  –€|  —V  ¨î*  	$î*  !·Ğ‘  Ü Ã~  ­!BJ  æ!¡/  %ñ"  È6S  ¨:ÏÇ   –:Ó~   ÆŸ9\  4·áô  ._Ùñ  )aæw  òi  dw    ( 5   C N Y )       5Bå¸åˆ¸   
+ MainWindow   $ B i l i b i l iOTá0okÎg0¯0ü0İ0ó0L       Bç«™å¤§ä¼šå‘˜æ¯æœˆ   
+ MainWindow    Q Q0°0ë0ü0×       QQç¾¤   
+ MainWindow   0n•“0g       ä¸­å®Œæˆäº†   
++MainWindow   O\€       ä½œè€…   
+ MainWindow   f0S0n0İ0Ã0×0¢0Ã0×0¦0£0ó0É0¦0Lˆhy:0U0Œ0~0Y0L00S0Œ0o F G O - p y0’[ŸˆL0g0M0‹0ˆ0F0k0j0c0_0S0h0’aTs0W0~0Y       =ä½ çœ‹è§äº†è¿™ä¸ªå¼¹çª—,è¯´æ˜ä½ å·²ç»èƒ½å¤Ÿè¿è¡ŒFGO-pyäº†   
+ MainWindow   QE–û       å……ç”µ   
+ MainWindow   D[ŒQhêRÕS0U0Œ0_0Š-[šN‰0n0¯0í0¹0×0é0Ã0È0Õ0©0ü0à F G O0¢0·0¹0¿0ó0È       3å…¨è‡ªåŠ¨å…é…ç½®è·¨å¹³å°å¼€ç®±å³ç”¨çš„FGOåŠ©æ‰‹   
+@@ -99,14 +99,14 @@ MainWindow   0
+ MainWindow   L0Y0‹0h0NÖ0nŠ-[š0j0W0g0 F G O - E x p B a l l0’vôc¥[ŸˆL0g0M0‹0ˆ0F0k0j0Š0~0Y       @é‚£ä¹ˆ,æ— éœ€ä»»ä½•å…¶ä»–é…ç½®,ä½ å¯ä»¥ç›´æ¥è¿è¡ŒFGO-ExpBall   
+ MainWindow    H P       é¡¹ç›®ä¸»é¡µ   
+ MainWindow   Œ°0H0‹       é¢†   
+-MainWindow   X0ª0ü0À0ü0Á0§0ó0¸Ou(0n000Ñ0ü0Æ0£0ü}èbu;—b0g]æ0K0‰ 1ÿ^ 60—^0ª0ü0À0ü0Á0§0ó0¸0nX4T0o 0       Eä»…ç”¨äºæ¢äººç¤¼è£…,ç¼–é˜Ÿç•Œé¢ä»å·¦åˆ°å³1-6,éæ¢äººç¤¼è£…å¡«0   Teamup   Q*QH˜OM00ˆ0Š\0U0D0‚0n0’Q*QH       ä¼˜å…ˆçº§,è¶Šå°è¶Šä¼˜å…ˆ   Teamup   sşW(0n0Á0ü0à0’Oİ[X0Y0‹       ä¿å­˜å½“å‰ç¼–é˜Ÿ   Teamup   >sşW(0n0Õ0©0ü0á0ü0·0ç0ó0’RgS0W0bKRÕ0gOİ[X0Y0‹_Å‰0L0B0Š0~0Y       (åˆå§‹åŒ–å½“å‰ç¼–é˜Ÿ,éœ€è¦æ‰‹åŠ¨ä¿å­˜   Teamup   <0S0n0’[QwvzRÕ0Y0‹0_00ng \–P0n0¹0Æ0ü0¸0Ou(0W0j0DX4T0o 0       /å®å…·çš„æœ€å°ä½¿ç”¨åœºæ¬¡,0ä¸ºä¸ä½¿ç”¨å®å…·   Teamup   0Ş0¹0¿0ü       å¾¡ä¸»æŠ€èƒ½   Teamup   4vzRÕ0Y0‹0¹0Æ0ü0¸0g00S0n0¹0­0ë0’vzRÕ0Y0‹0_00n0¿0ü0ó       $æŠ€èƒ½åœ¨ä½¿ç”¨åœºæ¬¡çš„ä½¿ç”¨å›åˆ   Teamup   <g \–P0n0¹0Æ0ü0¸0g00S0n0¹0­0ë0’vzRÕ0Y0‹0_00ng \–P0n0¿0ü0ó       0æŠ€èƒ½åœ¨æœ€å°ä½¿ç”¨åœºæ¬¡çš„æœ€å°ä½¿ç”¨å›åˆ   Teamup   00S0n0¹0­0ë0’vzRÕ0Y0‹0¹0Æ0ü0¸0Ou(0W0j0DX4T0o 0       )æŠ€èƒ½çš„ä½¿ç”¨åœºæ¬¡,0ä¸ºä¸ä½¿ç”¨æŠ€èƒ½   Teamup   >0S0n0¹0­0ë0’vzRÕ0Y0‹0_00ng \–P0n0¹0Æ0ü0¸0Ou(0W0j0DX4T0o 0       /æŠ€èƒ½çš„æœ€å°ä½¿ç”¨åœºæ¬¡,0ä¸ºä¸ä½¿ç”¨æŠ€èƒ½   Teamup   00¹0­0ë0n[şŒa0]æ0K0‰ 1ÿ^ 30l0k0W0j0D0nX4T0o 0       3æŠ€èƒ½çš„ç›®æ ‡,ä»å·¦å¾€å³1-3,0ä¸ºä¸å…³å¿ƒç›®æ ‡   Teamup   0µ0ü0Ö0¡0ó0È       ç¼–é˜Ÿä¿¡æ¯   Teamup   d0Á0ü0à0’xb0W0O\b0~0_0oRJ–d0Y0‹_Å‰0L0B0‹X4T0o0 f g o T e a m u p . i n i0’vôc¥Y	fô0W0f0O0`0U0D       >é€‰å–ç¼–é˜Ÿ,è‹¥éœ€æ–°å»ºæˆ–åˆ é™¤è¯·ç›´æ¥æ›´æ”¹fgoTeamup.ini   Teamup   RgS       é‡ç½®   Teamup   N
++MainWindow   X0ª0ü0À0ü0Á0§0ó0¸Ou(0n000Ñ0ü0Æ0£0ü}èbu;—b0g]æ0K0‰ 1ÿ^ 60—^0ª0ü0À0ü0Á0§0ó0¸0nX4T0o 0       Eä»…ç”¨äºæ¢äººç¤¼è£…,ç¼–é˜Ÿç•Œé¢ä»å·¦åˆ°å³1-6,éæ¢äººç¤¼è£…å¡«0   Teamup   Q*QH˜OM00ˆ0Š\0U0D0‚0n0’Q*QH       ä¼˜å…ˆçº§,è¶Šå°è¶Šä¼˜å…ˆ   Teamup   Oİ[X       ä¿å­˜   Teamup   sşW(0n0Á0ü0à0’Oİ[X0Y0‹       ä¿å­˜å½“å‰ç¼–é˜Ÿ   Teamup   >sşW(0n0Õ0©0ü0á0ü0·0ç0ó0’RgS0W0bKRÕ0gOİ[X0Y0‹_Å‰0L0B0Š0~0Y       (åˆå§‹åŒ–å½“å‰ç¼–é˜Ÿ,éœ€è¦æ‰‹åŠ¨ä¿å­˜   Teamup   <0S0n0’[QwvzRÕ0Y0‹0_00ng \–P0n0¹0Æ0ü0¸0Ou(0W0j0DX4T0o 0       /å®å…·çš„æœ€å°ä½¿ç”¨åœºæ¬¡,0ä¸ºä¸ä½¿ç”¨å®å…·   Teamup   0Ş0¹0¿0ü       å¾¡ä¸»æŠ€èƒ½   Teamup   4vzRÕ0Y0‹0¹0Æ0ü0¸0g00S0n0¹0­0ë0’vzRÕ0Y0‹0_00n0¿0ü0ó       $æŠ€èƒ½åœ¨ä½¿ç”¨åœºæ¬¡çš„ä½¿ç”¨å›åˆ   Teamup   <g \–P0n0¹0Æ0ü0¸0g00S0n0¹0­0ë0’vzRÕ0Y0‹0_00ng \–P0n0¿0ü0ó       0æŠ€èƒ½åœ¨æœ€å°ä½¿ç”¨åœºæ¬¡çš„æœ€å°ä½¿ç”¨å›åˆ   Teamup   00S0n0¹0­0ë0’vzRÕ0Y0‹0¹0Æ0ü0¸0Ou(0W0j0DX4T0o 0       )æŠ€èƒ½çš„ä½¿ç”¨åœºæ¬¡,0ä¸ºä¸ä½¿ç”¨æŠ€èƒ½   Teamup   >0S0n0¹0­0ë0’vzRÕ0Y0‹0_00ng \–P0n0¹0Æ0ü0¸0Ou(0W0j0DX4T0o 0       /æŠ€èƒ½çš„æœ€å°ä½¿ç”¨åœºæ¬¡,0ä¸ºä¸ä½¿ç”¨æŠ€èƒ½   Teamup   00¹0­0ë0n[şŒa0]æ0K0‰ 1ÿ^ 30l0k0W0j0D0nX4T0o 0       3æŠ€èƒ½çš„ç›®æ ‡,ä»å·¦å¾€å³1-3,0ä¸ºä¸å…³å¿ƒç›®æ ‡   Teamup   0µ0ü0Ö0¡0ó0È       ç¼–é˜Ÿä¿¡æ¯   Teamup   d0Á0ü0à0’xb0W0O\b0~0_0oRJ–d0Y0‹_Å‰0L0B0‹X4T0o0 f g o T e a m u p . i n i0’vôc¥Y	fô0W0f0O0`0U0D       >é€‰å–ç¼–é˜Ÿ,è‹¥éœ€æ–°å»ºæˆ–åˆ é™¤è¯·ç›´æ¥æ›´æ”¹fgoTeamup.ini   Teamup   RgS       é‡ç½®   Teamup   N
+ 0kyûRÕ       ä¸Šç§»   fgoMainWindow   N0kyûRÕ       ä¸‹ç§»   fgoMainWindow   kÎ1NûRÙ0K0‰\Qe       ä»æ¯å‘¨ä»»åŠ¡è½½å…¥   fgoMainWindow    L I C E N S E       ä½¿ç”¨è®¸å¯   fgoMainWindow   (0Õ0ì0ó0É0İ0¤0ó0ÈSìUš0n}Pgœu;—b0g[ŸˆL0Y0‹       7å…ˆæŠ½ä¸€å‘å‹æƒ…åè¿,åœ¨ç»“ç®—ç•Œé¢è¿è¡Œæœ¬åŠŸèƒ½   fgoMainWindow   
+ Qhu;—bˆhy:       å…¨é¢å±é€‚é…   fgoMainWindow   
+  A b o u t       å…³äº   fgoMainWindow    F G O - p y0k0d0D0f       å…³äºFGO-py   fgoMainWindow   0¯0¨0¹0È       å…³å¡   fgoMainWindow   0¯0¨0¹0È0­0å0ü       å…³å¡é˜Ÿåˆ—   fgoMainWindow   0¿0¹0¯0È0ì0¤0kk‹0Y       å…³é—­åˆ°æ‰˜ç›˜   fgoMainWindow   RJ–d       åˆ é™¤   fgoMainWindow   60¯0¨0¹0È0­0å0ü0kıR 0U0Œ0_fBp¹0gg	R¹0 00j0‰VŞepq!R6–P       /åŠ å…¥å…³å¡é˜Ÿåˆ—åç”Ÿæ•ˆ,0ä¸ºä¸é™åˆ¶æ¬¡æ•°   fgoMainWindow   0­0ü0Ş0Ã0Ô0ó0°       åŠ è½½æŒ‰é”®æ˜ å°„   fgoMainWindow   SìUš\ekt       å¬å”¤è®°å½•   fgoMainWindow   n A P0²0ü0¸0’zz0k0Y0‹0_00k0c[š0n0¯0¨0¹0È0’g R0nOMn0kn0O00~0_0o00¯0¨0¹0È0­0å0üQ…0n0¯0¨0¹0È0’˜k![ŸˆL0Y0‹       påœ¨å…³å¡åˆ—è¡¨ç•Œé¢å°†è¦åˆ·çš„å…³å¡ç½®äºç¬¬ä¸€ä¸ªæ¥æ¸…ç©ºä½“åŠ›,æˆ–æ˜¯ä¾æ¬¡æ‰§è¡Œå…³å¡é˜Ÿåˆ—ä¸­çš„å…³å¡   fgoMainWindow   epVŞ0nb&•Ø0n_Œ0kP\kb       'åœ¨å®Œæˆè‹¥å¹²åœºæˆ˜æ–—åç»ˆæ­¢æˆ˜æ–—   fgoMainWindow   <_7S[şŒa0’xb0W0_0L0_7SgPe™0’xb0W0j0K0c0_u;—b0g[ŸˆL0Y0‹       Eåœ¨é€‰æ‹©äº†å¼ºåŒ–å¯¹è±¡æœªé€‰æ‹©å¼ºåŒ–ææ–™çš„ç•Œé¢è¿è¡Œæœ¬åŠŸèƒ½   fgoMainWindow   & A P0²0ü0¸0’0¯0é0·0Ã0¯0Ğ0È0ë0gzz0k0Y0‹       !åŸºäºç»å…¸æˆ˜æ–—çš„æ¸…ç©ºä½“åŠ›   fgoMainWindow   2ˆLN-0n0Ğ0È0ë0’[ŒN†0Y0‹       å®Œæˆå½“å‰æˆ˜æ–—   fgoMainWindow   b&•Ø       å®Œæˆæˆ˜æ–—   fgoMainWindow   _7S       å¼ºåŒ–   fgoMainWindow   wó       å½©   fgoMainWindow   QC0kb;0Y       æ¢å¤åŸåˆ†è¾¨ç‡   fgoMainWindow   
+ eWb&fBP\kb       æˆ˜è´¥æ’¤é€€æ—¶ç»ˆæ­¢æˆ˜æ–—   fgoMainWindow   T0Á0ü0à}èb0¤0ó0¿0ü0Õ0§0¤0¹0gxb0W0_0Á0ü0à0nOMn0]æ0K0‰ 1ÿ^ 1 00 00j0‰R0Šfÿ0H0j0W       Oæ‰€é€‰ç¼–é˜Ÿåœ¨é˜Ÿä¼ç¼–æˆç•Œé¢çš„ä½ç½®,ä»å·¦åˆ°å³1-10,0ä¸ºä¸åˆ‡æ¢ç¼–é˜Ÿ   fgoMainWindow   (‰ep0ny<ˆÅ0’ 10d0k0~0h00}LšP$s‰0’O\0‹       'æŠŠè‹¥å¹²å¼ ä½æ˜Ÿç¤¼è£…åˆå¹¶æˆä¸€ä¸ª   fgoMainWindow   0Õ0ì0ó0É0İ0¤0ó0ÈSìUš       	æŠ½å‹æƒ…   fgoMainWindow   b½0[0“       	æŠ½å¥–æ±    fgoMainWindow   N fBP\kb       æŒ‚èµ·æˆ˜æ–—   fgoMainWindow   R6_¡       æ§åˆ¶   fgoMainWindow   }LšP$s‰       	æ“ä¸¸å­   fgoMainWindow   0Õ0¡0¤0ë       æ–‡ä»¶   fgoMainWindow   ıR        æ–°å¢   fgoMainWindow   N fBP\kb /}™}š       æš‚åœ/ç»§ç»­æˆ˜æ–—   fgoMainWindow   Y	fô       æ›´æ”¹   fgoMainWindow   0¹0¯0ê0ü0ó0·0ç0Ã0È       æ£€æŸ¥æˆªå›¾   fgoMainWindow   @c¥}š0LxºzË0U0Œ0f0D0‹0S0h0’xºŠ0Y0‹0_00k0¹0¯0ê0ü0ó0·0ç0Ã0È0’d®0‹       æ£€æŸ¥æˆªå›¾ç¡®å®šè¿æ¥å»ºç«‹   fgoMainWindow   VŞep       æ¬¡æ•°   fgoMainWindow   wå0‰0[0‹       æ¶ˆæ¯æ¨é€   fgoMainWindow   0×0ì0¼0ó0È0Ü0Ã0¯0¹       æ¸…ç†é‚®ç®±   fgoMainWindow   0¯0ê0¢       æ¸…ç©º   fgoMainWindow   
+ 0×0í0°0é0à       ç¨‹åº   fgoMainWindow   ^8fBRMzïˆhy:       çª—å£ç½®é¡¶   fgoMainWindow   0Y0P0kb&•Ø0’N-kb0Y0‹       ç«‹åˆ»ç»ˆæ­¢æˆ˜æ–—   fgoMainWindow   zà       ç« èŠ‚   fgoMainWindow   P\kb       ç»ˆæ­¢æˆ˜æ–—   fgoMainWindow   .SìUšŠ“20’0¨0¯0¹0İ0ü0È0Y0‹0SìUšu;—b0g[ŸˆL0Y0‹       4ç»Ÿè®¡å¯¼å‡ºå¬å”¤è®°å½•,åœ¨æŠ½å¡è®°å½•é¡µé¢è¿è¡Œ   fgoMainWindow   0Á0ü0à       ç¼–é˜Ÿ   fgoMainWindow    S t a r t !       è‚!   fgoMainWindow   êRÕ}èb       è‡ªåŠ¨ç¼–é˜Ÿ   fgoMainWindow   rykŠ0É0í0Ã0×epVŞ0gP\kb       !è‹¥å¹²ç‰¹æ®Šæ‰è½åç»ˆæ­¢æˆ˜æ–—   fgoMainWindow   g—j       è‹¹æœ   fgoMainWindow   }Fy<ˆÅsr_—fBP\kb       !è·å¾—ç¾ç»Šç¤¼è£…æ—¶ç»ˆæ­¢æˆ˜æ–—   fgoMainWindow   g—j0nep       è¦åƒçš„è‹¹æœæ•°é‡   fgoMainWindow   
+-g—j0nz.˜^       è¦åƒçš„è‹¹æœç§ç±»   fgoMainWindow   0Ç0Ğ0¤0¹       è®¾å¤‡   fgoMainWindow   Š-[š       è®¾ç½®   fgoMainWindow    1 6 : 90kŠ¿et0Y0‹       è°ƒæ•´ä¸º16:9   fgoMainWindow   0¨0¯0¹0×0í0ü0é0ü       èµ„æºç®¡ç†å™¨   fgoMainWindow   0Ç0Ğ0¤0¹0kc¥}š0Y0‹       è¿æ¥åˆ°è®¾å¤‡   fgoMainWindow   }BN†       é€€å‡º   fgoMainWindow   ’…       é“œ   fgoMainWindow   ’€       é“¶   fgoMainWindow   
+-0¯0é0·0Ã0¯       é™ˆå¹´è€è‚   fgoMainWindow   Nˆ}P\kb       é¢„çº¦ç»ˆæ­¢   fgoMainWindow   
++g—j0nz.˜^       è¦åƒçš„è‹¹æœç§ç±»   fgoMainWindow   0Ç0Ğ0¤0¹       è®¾å¤‡   fgoMainWindow   Š-[š       è®¾ç½®   fgoMainWindow    1 6 : 90kŠ¿et0Y0‹       è°ƒæ•´ä¸º16:9   fgoMainWindow   0¨0¯0¹0×0í0ü0é0ü       èµ„æºç®¡ç†å™¨   fgoMainWindow   0Ç0Ğ0¤0¹0kc¥}š0Y0‹       è¿æ¥åˆ°è®¾å¤‡   fgoMainWindow   }BN†       é€€å‡º   fgoMainWindow   ‘Ñ       é‡‘   fgoMainWindow   ’…       é“œ   fgoMainWindow   ’€       é“¶   fgoMainWindow   
++0¯0é0·0Ã0¯       é™ˆå¹´è€è‚   fgoMainWindow   —R       é’   fgoMainWindow   Nˆ}P\kb       é¢„çº¦ç»ˆæ­¢   fgoMainWindow   
+ yj0nwâ\;       ArrowheadOfMalice   material   
+ 0ª0ü0í0é’ü       AuroraSteel   material   †y0n|øs‰       BallOfRainbowThread   material   Òsc       BlackBeastGrease   material   m÷lŒ0nr*       ClawOfChaos   material   QI’€0nQ        CrownOfSilveryLight   material   Tjsc€Æwó       CursedBeastGallstone   material   
+ Nk{0nkÒ‘İ       DeadlyPoisonousNeedle   material   y^—
+@@ -193,5 +193,4 @@ uu#
+ ‹f–2è^ƒX4       5-1-4-0   quest   
+ }­cèg,è       5-1-5-0   quest   YThè       5-1-6-0   quest   
+ yûèg,è       5-1-7-0   quest   }­cè0â0ü0ë       5-1-8-0   quest   
+-iË{Éèg,è       5-1-9-0   quest/  d —                                                                                                                                                                                                                                                                                                           Teamup questmaterial fgoMainWindow
+-MainWindow 
+\ No newline at end of file
++iË{Éèg,è       5-1-9-0   quest   0°0é0ó0É0Ğ0È0ë       99   quest
+\ No newline at end of file
+diff --git a/FGO-py/fgoI18n.ja.ts b/FGO-py/fgoI18n.ja.ts
+index 51f80f0..f8518b6 100644
+--- a/FGO-py/fgoI18n.ja.ts
++++ b/FGO-py/fgoI18n.ja.ts
+@@ -1118,6 +1118,10 @@
+       <source>5-1</source>
+       <translation>ãƒšãƒ¼ãƒ‘ãƒ¼ãƒ ãƒ¼ãƒ³</translation>
+     </message>
++    <message>
++      <source>99</source>
++      <translation>ã‚°ãƒ©ãƒ³ãƒ‰ãƒãƒˆãƒ«</translation>
++    </message>
+     <message>
+       <source>0-0-0</source>
+       <translation>å®ç‰©åº«ã®æ‰‰ã‚’é–‹ã‘</translation>
+diff --git a/FGO-py/fgoI18n.zh.qm b/FGO-py/fgoI18n.zh.qm
+index 5a69cef..d18d12a 100644
+--- a/FGO-py/fgoI18n.zh.qm
++++ b/FGO-py/fgoI18n.zh.qm
+@@ -1,4 +1,4 @@
+-<¸dÊïœ•Í!¿`¡½İ§   zh_CNB     3   µ  4   	  4  °  4  U  4  <  4  h  4  ô  4  K  4  °  5     5  À  5  Ã  5  !S  6   #.  6  %Å  6  '¼  6  )‹  6  +H  6  ,è  6  .á  6  1”  7   4i  7  6   8   9u  8  <Ï ,[|  Ğ 0A`  #Û 0Ap  5 0A€  :& 0A  :h 0B`  #­ 0Bp  4Ş 0B€  9ü 0F€  ;  0G`  $3 0G€  :Ğ 0H`  $	 0Hp  50 0H€  :¢ 3   Ü @AP  [ @Ap  7G @BP  3 @B`  &: @Bp  7 @B€  =J @Ep  7ó @Fp  7É @Gp  7Ÿ @Hp  7q PB@  È PB`  (+ `B@  ± `BP  !Æ €A@  “ €B@  i €B`  -a €G@  ã €H@  » A@  ğ A`  /Š B@  Æ B`  /` E`  0* F`  0 G@  @ G`  /Ú H@   H`  /²  A@  Q  A`  2G  B@  +  B`  2  E`  2õ  F`  2É  G@  £  G`  2Ÿ  H@  y  H`  2s’E    Ajµ  
++<¸dÊïœ•Í!¿`¡½İ§   zh_CNB  ¨  É  >Ì  3   µ  4   	  4  °  4  U  4  <  4  h  4  ô  4  K  4  °  5     5  À  5  Ã  5  !S  6   #.  6  %Å  6  '¼  6  )‹  6  +H  6  ,è  6  .á  6  1”  7   4i  7  6   8   9u  8  <Ï ,[|  Ğ 0A`  #Û 0Ap  5 0A€  :& 0A  :h 0B`  #­ 0Bp  4Ş 0B€  9ü 0F€  ;  0G`  $3 0G€  :Ğ 0H`  $	 0Hp  50 0H€  :¢ 3   Ü @AP  [ @Ap  7G @BP  3 @B`  &: @Bp  7 @B€  =J @Ep  7ó @Fp  7É @Gp  7Ÿ @Hp  7q PB@  È PB`  (+ `B@  ± `BP  !Æ €A@  “ €B@  i €B`  -a €G@  ã €H@  » A@  ğ A`  /Š B@  Æ B`  /` E`  0* F`  0 G@  @ G`  /Ú H@   H`  /²  A@  Q  A`  2G  B@  +  B`  2  E`  2õ  F`  2É  G@  £  G`  2Ÿ  H@  y  H`  2s’E    Ajµ  
+  |B  thï  `ÖÏœ  ™ñËÅ  	T  ;Z¡õ  ëd™ş  À}1  §äûb  &0  *0  [0  Œ0  ½0  î0  	0  P
+ 0  0  Ó0  ú0  #0  L0  q0  –	0  ½
+ 0  ä0  	0  .0  z0  £0  ô0  0  F0  o	0  ”
+@@ -55,7 +55,7 @@ n	
+ ¢¾¥  
+ ÜG±  özß  ;t  
+ 9Jd  µRÕä   hY“…  
+- ’…  V  	;”Z.  °f€7  ä¨.  Û·áô  NÙñ  Vi  >Ì   
++ ’…  V  	;”Z.  °f€7  ä¨.  Û·áô  NÙñ  Vi  >î   
+ yxjNK{­Y4       ArrowheadOfMalice   material   gQINK”¢       AuroraSteel   material   †yNK~¿t       BallOfRainbowThread   material   ÑQ}       BlackBeastGrease   material   m÷lŒNKr*       ClawOfChaos   material   QI”öNKQ        CrownOfSilveryLight   material   T’Q}€Æwó       CursedBeastGallstone   material   
+ Nk{v„kÒ”ˆ       DeadlyPoisonousNeedle   material   y^	pu[P       DivineSpiritron   material   Ÿ™NKrY       
+ DragonFang   material   Ÿ™NKœŞ       DragonsReverseScale   material   wtNKSu       
+@@ -133,4 +133,4 @@ uN
+ ‹f–2è^W:       5-1-4-0   quest   
+ ~ôcèg,è       5-1-5-0   quest   YVôè       5-1-6-0   quest   
+ lĞèg,è       5-1-7-0   quest   ~ôcèUFNˆW       5-1-8-0   quest   
+-g„{Qèg,è       5-1-9-0   quest/  B —                                                                                                                                                                                                                                                                                                              questmaterial 
+\ No newline at end of file
++g„{Qèg,è       5-1-9-0   quest   Q OMb       99   quest
+\ No newline at end of file
+diff --git a/FGO-py/fgoI18n.zh.ts b/FGO-py/fgoI18n.zh.ts
+index 4436762..d5af386 100644
+--- a/FGO-py/fgoI18n.zh.ts
++++ b/FGO-py/fgoI18n.zh.ts
+@@ -334,6 +334,10 @@
+       <source>5-1</source>
+       <translation>å¹³é¢ä¹‹æœˆ</translation>
+     </message>
++    <message>
++      <source>99</source>
++      <translation>å† ä½æˆ˜</translation>
++    </message>
+     <message>
+       <source>0-0-0</source>
+       <translation>æ‰“å¼€å®ç‰©åº“ä¹‹é—¨</translation>
 diff --git a/FGO-py/fgoImageListener.py b/FGO-py/fgoImageListener.py
 index 234771d..a39059d 100644
 --- a/FGO-py/fgoImageListener.py
@@ -550,7 +904,7 @@ index 234771d..a39059d 100644
          self.ends=ends
          self.listener=DirListener(path)
 diff --git a/FGO-py/fgoKernel.py b/FGO-py/fgoKernel.py
-index edb952e..27821ee 100644
+index edb952e..b578008 100644
 --- a/FGO-py/fgoKernel.py
 +++ b/FGO-py/fgoKernel.py
 @@ -17,10 +17,12 @@
@@ -567,7 +921,25 @@ index edb952e..27821ee 100644
  import fgoDevice
  from itertools import permutations
  from functools import wraps
-@@ -414,12 +416,258 @@ class Turn:
+@@ -166,11 +168,12 @@ def goto(quest):
+     fgoDevice.device.perform(*((' ',(600,))if Detect(.6).isTerminal()else('S',(1500,))))
+     reishift(quest)
+     schedule.sleep(.5)
+-    for _ in range(4):
+-        if Detect(.4).isQuestListBegin():break
+-        fgoDevice.device.swipe((1000,200),(1000,600))
+-    while not Detect(.4).isQuestFreeContains(quest[0]):fgoDevice.device.swipe((1000,600),(1000,200))
+-    while not Detect(.4).isQuestFreeFirst(quest[0]):fgoDevice.device.swipe((1000,395),(1000,300))
++    if quest[0] != 99:
++        for _ in range(4):
++            if Detect(.4).isQuestListBegin():break
++            fgoDevice.device.swipe((1000,200),(1000,600))
++        while not Detect(.4).isQuestFreeContains(quest[0]):fgoDevice.device.swipe((1000,600),(1000,200))
++        while not Detect(.4).isQuestFreeFirst(quest[0]):fgoDevice.device.swipe((1000,395),(1000,300))
+ @serialize(mutex)
+ def weeklyMission():
+     while not Detect(0,1).isMainInterface():pass
+@@ -414,14 +417,563 @@ class Turn:
          else:fgoDevice.device.perform('\x08',(700,))
          while not Detect().isTurnBegin():pass
          Detect(.5)
@@ -824,10 +1196,316 @@ index edb952e..27821ee 100644
 +    def getNP(self): return [Detect.cache.getFieldServantNp(i) for i in range(3)]
 +    def getServantHP(self): return [Detect.cache.getFieldServantHp(i)if self.servant[i][0]else 999999 for i in range(3)]
 +
++
++class Ex1GrandOrderWithOthersCiel1003StarTurn(CustomTurn):
++    def __init__(self):
++        self.stage=0
++        self.stageTurn=0
++        self.countDown=[[[0,0,0],[0,0,0],[0,0,0]],[0,0,0]]
++        self.detectedTurn = 0
++        self.water_caber_reappeared = False
++    def __call__(self,turn):
++        self.stage,self.stageTurn=[t:=Detect(.2).getStage(),1+self.stageTurn*(self.stage==t)]
++        if turn==1:
++            Detect.cache.setupServantDead()
++            self.stageTotal=Detect.cache.getStageTotal()
++            self.servant=[(lambda x:(x,)+servantData.get(x,(0,0,0,0,(0,0),((0,0),(0,0),(0,0)))))(Detect.cache.getFieldServant(i))for i in range(3)]
++        else:
++            for i in(i for i in range(3)if Detect.cache.isServantDead(i)):
++                self.servant[i]=(lambda x:(x,)+servantData.get(x,(0,0,0,0,(0,0),((0,0),(0,0),(0,0)))))(Detect.cache.getFieldServant(i))
++                self.countDown[0][i]=[0,0,0]
++        self.detectedTurn = Detect.cache.getTurn()
++        logger.info(f'Turn {turn} (Detected Turn {self.detectedTurn}) Stage {self.stage} StageTurn {self.stageTurn} {[i[0]for i in self.servant]}')
++        if self.detectedTurn > 10:
++            print("detectedTurn > 10, take its last digit")
++            self.detectedTurn = self.detectedTurn % 10
++        time.sleep(1)
++        if self.stageTurn==1:Detect.cache.setupEnemyGird()
++        self.enemy=[Detect.cache.getEnemyHp(i)for i in range(6)]
++
++        if self.stageTurn == 1:
++            self.castSingleOrNoTargetServantSkill(0, 2, -1)
++            self.castMasterSkill(2, [0, 4])
++            self.castSingleOrNoTargetServantSkill(0, 0, -1)
++            self.castSingleOrNoTargetServantSkill(0, 1, 1)
++            self.castSingleOrNoTargetServantSkill(0, 2, -1)
++            self.castSingleOrNoTargetServantSkill(1, 0, -1)
++            self.castSingleOrNoTargetServantSkill(1, 1, -1)
++            self.castSingleOrNoTargetServantSkill(1, 2, -1)
++            self.castSingleOrNoTargetServantSkill(2, 0, -1)
++            self.castSingleOrNoTargetServantSkill(2, 1, -1)
++            self.castSingleOrNoTargetServantSkill(2, 2, [2])
++            self.castMasterSkill(0, [])
++
++            fgoDevice.device.perform(' ',(2100,))
++            fgoDevice.device.perform(self.selectCard_st1(),(300,300,2300,1300,6000))
++        else:
++            self.dispatchSkill()
++            fgoDevice.device.perform(' ',(2100,))
++            fgoDevice.device.perform(self.selectCard(),(300,300,2300,1300,6000))
++
++    @logit(logger,logging.INFO)
++    def selectCard_st1(self):
++        color,sealed,hougu,np,resist,critical,group=Detect().getCardColor()+[i[5][1]for i in self.servant],Detect.cache.isCardSealed(),Detect.cache.isHouguReady(),[Detect.cache.getFieldServantNp(i)<100 for i in range(3)],[[1,1.7,.6][i]for i in Detect.cache.getCardResist()],[i/10 for i in Detect.cache.getCardCriticalRate()],[next(j for j,k in enumerate(self.servant)if k[0]==i)for i in Detect.cache.getCardServant([i[0] for i in self.servant if i[0]])]+[0,1,2]
++        houguTargeted,houguArea,houguSupport=[[j for j in range(3)if hougu[j]and self.servant[j][0]and self.servant[j][5][0]==i]for i in range(3)]
++        houguArea=houguArea if self.stage==self.stageTotal or sum(i>0 for i in self.enemy)>1 and sum(self.enemy)>12000 else[]
++        houguTargeted=houguTargeted if self.stage==self.stageTotal or max(self.enemy)>23000+8000*len(houguArea)else[]
++        hougu=[i+5 for i in houguSupport+houguArea+houguTargeted]
++        if self.stageTurn==1 or houguTargeted or self.enemy[self.target]==0:
++            self.target=numpy.argmax(self.enemy)
++            fgoDevice.device.perform('\x67\x68\x69\x64\x65\x66'[self.target],(500,))
++        self.enemy=[max(0,i-18000*len(houguArea))for i in self.enemy]
++        if any(self.enemy)and self.enemy[self.target]==0:self.target=next(i for i in range(5,-1,-1)if self.enemy[i])
++        for _ in houguTargeted:
++            self.enemy[self.target]=max(0,self.enemy[self.target]-48000)
++            if any(self.enemy)and self.enemy[self.target]==0:self.target=next(i for i in range(5,-1,-1)if self.enemy[i])
++
++        def evaluate(card):
++            mark = (critical[card[0]] + critical[card[1]]) if not ((color[card[0]] == 0 and color[card[1]] == 1) or
++                                                                   (color[card[0]] == 1 and color[card[1]] == 0)) else \
++                (max(critical[card[0]]+0.2, 1) + max(critical[card[1]]+0.2, 1))
++
++            return mark
++        card=list(max(permutations(range(5),2),key=lambda x:evaluate(list(x))))
++        return''.join(['12345678'[i]for i in [6]+card+list({0,1,2,3,4}-set(card))])
++
++class Summer1090PlusPlusTurn(CustomTurn):
++    def __init__(self):
++        self.stage=0
++        self.stageTurn=0
++        self.countDown=[[[0,0,0],[0,0,0],[0,0,0]],[0,0,0]]
++        self.detectedTurn = 0
++        self.started = False
++    def __call__(self,turn):
++        self.stage,self.stageTurn=[t:=Detect(.2).getStage(),1+self.stageTurn*(self.stage==t)]
++        if turn==1:
++            Detect.cache.setupServantDead()
++            self.stageTotal=Detect.cache.getStageTotal()
++            self.servant=[(lambda x:(x,)+servantData.get(x,(0,0,0,0,(0,0),((0,0),(0,0),(0,0)))))(Detect.cache.getFieldServant(i))for i in range(3)]
++        else:
++            for i in(i for i in range(3)if Detect.cache.isServantDead(i)):
++                self.servant[i]=(lambda x:(x,)+servantData.get(x,(0,0,0,0,(0,0),((0,0),(0,0),(0,0)))))(Detect.cache.getFieldServant(i))
++                self.countDown[0][i]=[0,0,0]
++        self.detectedTurn = Detect.cache.getTurn()
++        logger.info(f'Turn {turn} (Detected Turn {self.detectedTurn}) Stage {self.stage} StageTurn {self.stageTurn} {[i[0]for i in self.servant]}')
++        if self.detectedTurn > 10:
++            print("detectedTurn > 10, take its last digit")
++            self.detectedTurn = self.detectedTurn % 10
++        if self.stageTurn==1:Detect.cache.setupEnemyGird()
++        self.enemy=[Detect.cache.getEnemyHp(i)for i in range(6)]
++
++
++        self.target = 0
++
++        if self.stage == 1 and self.stageTurn == 1:
++            self.castSingleOrNoTargetServantSkill(2, 1, -1)
++            fgoDevice.device.perform(' ',(2100,))
++            fgoDevice.device.perform(self.selectCard_t1(assumed_hougu=[7]),(300,300,2300,1300,6000))
++        elif self.stage == 2 and self.stageTurn == 1:
++            self.castSingleOrNoTargetServantSkill(2, 0, -1)
++            self.castSingleOrNoTargetServantSkill(0, 2, 2)
++            self.castMasterSkill(2, [2])
++            self.castSingleOrNoTargetServantSkill(2, 1, -1)
++            fgoDevice.device.perform(' ',(2100,))
++            fgoDevice.device.perform(self.selectCard_t2(assumed_hougu=[7]),(300,300,2300,1300,6000))
++        elif self.stage == 3 and self.stageTurn == 1:
++            self.castSingleOrNoTargetServantSkill(0, 0, -1)
++            self.castSingleOrNoTargetServantSkill(1, 0, 2)
++            self.castSingleOrNoTargetServantSkill(1, 1, -1)
++            self.castSingleOrNoTargetServantSkill(1, 2, 2)
++            self.castSingleOrNoTargetServantSkill(2, 0, -1)
++            self.castSingleOrNoTargetServantSkill(2, 2, -1)
++            fgoDevice.device.perform(' ',(2100,))
++            fgoDevice.device.perform(self.selectCard_t3(assumed_hougu=[]),(300,300,2300,1300,6000))
++        else:
++            self.dispatchSkill()
++            fgoDevice.device.perform(' ',(2100,))
++            fgoDevice.device.perform(self.selectCard(),(300,300,2300,1300,6000))
++
++    @logit(logger,logging.INFO)
++    def selectCard_t1(self, assumed_hougu=[]):
++        color,sealed,hougu,np,resist,critical,group=Detect().getCardColor()+[i[5][1]for i in self.servant],Detect.cache.isCardSealed(),Detect.cache.isHouguReady(),[Detect.cache.getFieldServantNp(i)<100 for i in range(3)],[[1,1.7,.6][i]for i in Detect.cache.getCardResist()],[i/10 for i in Detect.cache.getCardCriticalRate()],[next(j for j,k in enumerate(self.servant)if k[0]==i)for i in Detect.cache.getCardServant([i[0] for i in self.servant if i[0]])]+[0,1,2]
++        houguTargeted,houguArea,houguSupport=[[j for j in range(3)if hougu[j]and self.servant[j][0]and self.servant[j][5][0]==i]for i in range(3)]
++        houguArea=houguArea if self.stage==self.stageTotal or sum(i>0 for i in self.enemy)>1 and sum(self.enemy)>12000 else[]
++        houguTargeted=houguTargeted if self.stage==self.stageTotal or max(self.enemy)>23000+8000*len(houguArea)else[]
++        hougu=[i+5 for i in houguSupport+houguArea+houguTargeted]
++        if self.stageTurn==1 or houguTargeted or self.enemy[self.target]==0:
++            self.target=numpy.argmax(self.enemy)
++            fgoDevice.device.perform('\x67\x68\x69\x64\x65\x66'[self.target],(500,))
++        self.enemy=[max(0,i-18000*len(houguArea))for i in self.enemy]
++        if any(self.enemy)and self.enemy[self.target]==0:self.target=next(i for i in range(5,-1,-1)if self.enemy[i])
++        for _ in houguTargeted:
++            self.enemy[self.target]=max(0,self.enemy[self.target]-48000)
++            if any(self.enemy)and self.enemy[self.target]==0:self.target=next(i for i in range(5,-1,-1)if self.enemy[i])
++        def evaluate(card):
++            mark = 0
++            for i in range(2):
++                if color[card[i]] == 2:
++                    mark += 10
++            if group[card[0]] != group[card[1]]: mark += 2
++            if (color[card[0]] == 0 and color[card[1]] == 1) or (color[card[0]] == 1 and color[card[1]] == 0): mark += 7
++            return mark
++        card=list(max(permutations(range(5),3-len(assumed_hougu)),key=lambda x:evaluate(list(x))))
++        return''.join(['12345678'[i]for i in assumed_hougu+card+list({0,1,2,3,4}-set(card))])
++
++    @logit(logger,logging.INFO)
++    def selectCard_t2(self, assumed_hougu=[]):
++        color,sealed,hougu,np,resist,critical,group=Detect().getCardColor()+[i[5][1]for i in self.servant],Detect.cache.isCardSealed(),Detect.cache.isHouguReady(),[Detect.cache.getFieldServantNp(i)<100 for i in range(3)],[[1,1.7,.6][i]for i in Detect.cache.getCardResist()],[i/10 for i in Detect.cache.getCardCriticalRate()],[next(j for j,k in enumerate(self.servant)if k[0]==i)for i in Detect.cache.getCardServant([i[0] for i in self.servant if i[0]])]+[0,1,2]
++        houguTargeted,houguArea,houguSupport=[[j for j in range(3)if hougu[j]and self.servant[j][0]and self.servant[j][5][0]==i]for i in range(3)]
++        houguArea=houguArea if self.stage==self.stageTotal or sum(i>0 for i in self.enemy)>1 and sum(self.enemy)>12000 else[]
++        houguTargeted=houguTargeted if self.stage==self.stageTotal or max(self.enemy)>23000+8000*len(houguArea)else[]
++        hougu=[i+5 for i in houguSupport+houguArea+houguTargeted]
++        if self.stageTurn==1 or houguTargeted or self.enemy[self.target]==0:
++            self.target=numpy.argmax(self.enemy)
++            fgoDevice.device.perform('\x67\x68\x69\x64\x65\x66'[self.target],(500,))
++        self.enemy=[max(0,i-18000*len(houguArea))for i in self.enemy]
++        if any(self.enemy)and self.enemy[self.target]==0:self.target=next(i for i in range(5,-1,-1)if self.enemy[i])
++        for _ in houguTargeted:
++            self.enemy[self.target]=max(0,self.enemy[self.target]-48000)
++            if any(self.enemy)and self.enemy[self.target]==0:self.target=next(i for i in range(5,-1,-1)if self.enemy[i])
++        def evaluate(card):
++            mark = 0
++            if color[card[0]] == 2 and color[card[1]] == 0: mark += 100
++            return mark
++        card=list(max(permutations(range(5),3-len(assumed_hougu)),key=lambda x:evaluate(list(x))))
++        return''.join(['12345678'[i]for i in assumed_hougu+card+list({0,1,2,3,4}-set(card))])
++
++    @logit(logger,logging.INFO)
++    def selectCard_t3(self, assumed_hougu=[]):
++        color,sealed,hougu,np,resist,critical,group=Detect().getCardColor()+[i[5][1]for i in self.servant],Detect.cache.isCardSealed(),Detect.cache.isHouguReady(),[Detect.cache.getFieldServantNp(i)<100 for i in range(3)],[[1,1.7,.6][i]for i in Detect.cache.getCardResist()],[i/10 for i in Detect.cache.getCardCriticalRate()],[next(j for j,k in enumerate(self.servant)if k[0]==i)for i in Detect.cache.getCardServant([i[0] for i in self.servant if i[0]])]+[0,1,2]
++        houguTargeted,houguArea,houguSupport=[[j for j in range(3)if hougu[j]and self.servant[j][0]and self.servant[j][5][0]==i]for i in range(3)]
++        houguArea=houguArea if self.stage==self.stageTotal or sum(i>0 for i in self.enemy)>1 and sum(self.enemy)>12000 else[]
++        houguTargeted=houguTargeted if self.stage==self.stageTotal or max(self.enemy)>23000+8000*len(houguArea)else[]
++        hougu=[i+5 for i in houguSupport+houguArea+houguTargeted]
++        if self.stageTurn==1 or houguTargeted or self.enemy[self.target]==0:
++            self.target=numpy.argmax(self.enemy)
++            fgoDevice.device.perform('\x67\x68\x69\x64\x65\x66'[self.target],(500,))
++        self.enemy=[max(0,i-18000*len(houguArea))for i in self.enemy]
++        if any(self.enemy)and self.enemy[self.target]==0:self.target=next(i for i in range(5,-1,-1)if self.enemy[i])
++        for _ in houguTargeted:
++            self.enemy[self.target]=max(0,self.enemy[self.target]-48000)
++            if any(self.enemy)and self.enemy[self.target]==0:self.target=next(i for i in range(5,-1,-1)if self.enemy[i])
++        def evaluate(card):
++            mark = 0
++            if color[card[0]] == 2 and color[card[1]] == 0 and color[card[2]] == 2: mark += 100
++            return mark
++        card=list(max(permutations(range(5),3-len(assumed_hougu)),key=lambda x:evaluate(list(x))))
++        return''.join(['12345678'[i]for i in assumed_hougu+card+list({0,1,2,3,4}-set(card))])
++
++class RiderGrandOrder1003StarTurn(CustomTurn):
++    def __init__(self):
++        self.stage=0
++        self.stageTurn=0
++        self.countDown=[[[0,0,0],[0,0,0],[0,0,0]],[0,0,0]]
++        self.detectedTurn = 0
++        self.started = False
++    def __call__(self,turn):
++        self.stage,self.stageTurn=[t:=Detect(.2).getStage(),1+self.stageTurn*(self.stage==t)]
++        if turn==1:
++            Detect.cache.setupServantDead()
++            self.stageTotal=Detect.cache.getStageTotal()
++            self.servant=[(lambda x:(x,)+servantData.get(x,(0,0,0,0,(0,0),((0,0),(0,0),(0,0)))))(Detect.cache.getFieldServant(i))for i in range(3)]
++        else:
++            for i in(i for i in range(3)if Detect.cache.isServantDead(i)):
++                self.servant[i]=(lambda x:(x,)+servantData.get(x,(0,0,0,0,(0,0),((0,0),(0,0),(0,0)))))(Detect.cache.getFieldServant(i))
++                self.countDown[0][i]=[0,0,0]
++        self.detectedTurn = Detect.cache.getTurn()
++        logger.info(f'Turn {turn} (Detected Turn {self.detectedTurn}) Stage {self.stage} StageTurn {self.stageTurn} {[i[0]for i in self.servant]}')
++        if self.detectedTurn > 10:
++            print("detectedTurn > 10, take its last digit")
++            self.detectedTurn = self.detectedTurn % 10
++        if self.stageTurn==1:Detect.cache.setupEnemyGird()
++        self.enemy=[Detect.cache.getEnemyHp(i)for i in range(6)]
++
++
++        self.target = 0
++
++        if self.stage == 1 and self.stageTurn == 1:
++            self.castSingleOrNoTargetServantSkill(1, 0, -1)
++            # self.castSingleOrNoTargetServantSkill(1, 1, -1)
++            self.castMasterSkill(2, [1, 3])
++            self.castSingleOrNoTargetServantSkill(0, 0, -1)
++            self.castSingleOrNoTargetServantSkill(0, 1, -1)
++            # self.castSingleOrNoTargetServantSkill(0, 2, -1)
++            self.castSingleOrNoTargetServantSkill(1, 0, -1)
++            # self.castSingleOrNoTargetServantSkill(1, 1, -1)
++            # self.castSingleOrNoTargetServantSkill(1, 2, -1)
++            # self.castSingleOrNoTargetServantSkill(2, 0, -1)
++            self.castSingleOrNoTargetServantSkill(2, 1, 0)
++            self.castSingleOrNoTargetServantSkill(2, 2, 2)
++            self.castMasterSkill(0, [])
++            fgoDevice.device.perform(' ',(2100,))
++            fgoDevice.device.perform(self.selectCard_t1(assumed_hougu=[7,5]),(300,300,2300,1300,6000))
++        else:
++            self.dispatchSkill()
++            fgoDevice.device.perform(' ',(2100,))
++            fgoDevice.device.perform(self.selectCard_others(),(300,300,2300,1300,6000))
++
++    @logit(logger,logging.INFO)
++    def selectCard_t1(self, assumed_hougu=[]):
++        color,sealed,hougu,np,resist,critical,group=Detect().getCardColor()+[i[5][1]for i in self.servant],Detect.cache.isCardSealed(),Detect.cache.isHouguReady(),[Detect.cache.getFieldServantNp(i)<100 for i in range(3)],[[1,1.7,.6][i]for i in Detect.cache.getCardResist()],[i/10 for i in Detect.cache.getCardCriticalRate()],[next(j for j,k in enumerate(self.servant)if k[0]==i)for i in Detect.cache.getCardServant([i[0] for i in self.servant if i[0]])]+[0,1,2]
++        houguTargeted,houguArea,houguSupport=[[j for j in range(3)if hougu[j]and self.servant[j][0]and self.servant[j][5][0]==i]for i in range(3)]
++        houguArea=houguArea if self.stage==self.stageTotal or sum(i>0 for i in self.enemy)>1 and sum(self.enemy)>12000 else[]
++        houguTargeted=houguTargeted if self.stage==self.stageTotal or max(self.enemy)>23000+8000*len(houguArea)else[]
++        hougu=[i+5 for i in houguSupport+houguArea+houguTargeted]
++        if self.stageTurn==1 or houguTargeted or self.enemy[self.target]==0:
++            self.target=numpy.argmax(self.enemy)
++            fgoDevice.device.perform('\x67\x68\x69\x64\x65\x66'[self.target],(500,))
++        self.enemy=[max(0,i-18000*len(houguArea))for i in self.enemy]
++        if any(self.enemy)and self.enemy[self.target]==0:self.target=next(i for i in range(5,-1,-1)if self.enemy[i])
++        for _ in houguTargeted:
++            self.enemy[self.target]=max(0,self.enemy[self.target]-48000)
++            if any(self.enemy)and self.enemy[self.target]==0:self.target=next(i for i in range(5,-1,-1)if self.enemy[i])
++        def evaluate(card):
++            mark = 0
++            for i in range(len(card)):
++                if group[card[i]] == 0:
++                    mark += 10
++                if color[card[i]] == 1:
++                    mark += 5
++                elif color[card[i]] == 2:
++                    mark += 4
++                mark += critical[card[i]]
++            return mark
++        card=list(max(permutations(range(5),3-len(assumed_hougu)),key=lambda x:evaluate(list(x))))
++        return''.join(['12345678'[i]for i in assumed_hougu+card+list({0,1,2,3,4}-set(card))])
++
++    @logit(logger,logging.INFO)
++    def selectCard_others(self):
++        self.target=5
++        color,sealed,hougu,np,resist,critical,group=Detect().getCardColor()+[i[5][1]for i in self.servant],Detect.cache.isCardSealed(),Detect.cache.isHouguReady(),[Detect.cache.getFieldServantNp(i)<100 for i in range(3)],[[1,1.7,.6][i]for i in Detect.cache.getCardResist()],[i/10 for i in Detect.cache.getCardCriticalRate()],[next(j for j,k in enumerate(self.servant)if k[0]==i)for i in Detect.cache.getCardServant([i[0] for i in self.servant if i[0]])]+[0,1,2]
++        houguTargeted,houguArea,houguSupport=[[j for j in range(3)if hougu[j]and self.servant[j][0]and self.servant[j][5][0]==i]for i in range(3)]
++        houguArea=houguArea if self.stage==self.stageTotal or sum(i>0 for i in self.enemy)>1 and sum(self.enemy)>12000 else[]
++        houguTargeted=houguTargeted if self.stage==self.stageTotal or max(self.enemy)>23000+8000*len(houguArea)else[]
++        hougu=[i+5 for i in houguSupport+houguArea+houguTargeted]
++        if self.stageTurn==1 or houguTargeted or self.enemy[self.target]==0:
++            self.target=5
++            fgoDevice.device.perform('\x67\x68\x69\x64\x65\x66'[self.target],(500,))
++        self.enemy=[max(0,i-18000*len(houguArea))for i in self.enemy]
++        if any(self.enemy)and self.enemy[self.target]==0:self.target=next(i for i in range(5,-1,-1)if self.enemy[i])
++        for _ in houguTargeted:
++            self.enemy[self.target]=max(0,self.enemy[self.target]-48000)
++            if any(self.enemy)and self.enemy[self.target]==0:self.target=next(i for i in range(5,-1,-1)if self.enemy[i])
++        def evaluate(card):return(lambda chainError:(lambda colorChain:(lambda firstBonus:
++            sum(
++                ((.3*bool(firstBonus&4)+.1*bool(firstBonus&1)+[1.,1.2,1.4][i]*[1,.8,1.1][color[j]])*(1+min(1,critical[j]+.2*bool(firstBonus&2)))+bool(colorChain==2))*resist[j]*(not sealed[j])
++                for i,j in enumerate(card)if j<5
++            )
++            +4*(len([i for i in self.enemy if i])>1)*(self.enemy[self.target]<20000)*sum(bool(i)for i in numpy.diff([group[i]for i in card if i<5]))
++            +(1.8 if colorChain==-1 else 3)*(not chainError and len({group[i]for i in card})==1)*resist[card[0]]
++            +2.3*(colorChain==0)*len({group[i]for i in card if i<5 and np[group[i]]})
++            +3*(colorChain==1)
++            )(7 if colorChain==3 else 1<<color[0]))(-1 if chainError else{(0,):0,(1):1,(2,):2,(0,1,2):3}.get(tuple(set(color[i]for i in card)),-1)))(any(sealed[i]for i in card if i<5))
++        card=list(max(permutations(range(5),3-len(hougu)),key=lambda x:evaluate(hougu+list(x))))
++        return''.join(['12345678'[i]for i in hougu+card+list({0,1,2,3,4}-set(card))])
++
  class Battle:
-     def __init__(self,turnClass=Turn):
+-    def __init__(self,turnClass=Turn):
++    def __init__(self,turnClass=RiderGrandOrder1003StarTurn):
          self.turn=0
-@@ -462,10 +710,22 @@ class Battle:
+         self.turnProc=turnClass()
+         self.rainbowBox=False
+@@ -462,10 +1014,22 @@ class Battle:
  class Main:
      teamIndex=0
      autoFormation=False
@@ -851,7 +1529,7 @@ index edb952e..27821ee 100644
      @serialize(mutex)
      def __call__(self,questIndex=0,battleTotal=None):
          self.prepare()
-@@ -473,7 +733,7 @@ class Main:
+@@ -473,7 +1037,7 @@ class Main:
              self.battleProc=self.battleClass()
              while True:
                  if Detect(.3,.3).isMainInterface():
@@ -860,7 +1538,7 @@ index edb952e..27821ee 100644
                      fgoDevice.device.press('84L'[questIndex])
                      questIndex=0
                      if Detect(1.2).isBattleContinue():fgoDevice.device.press('K')
-@@ -481,19 +741,40 @@ class Main:
+@@ -481,19 +1045,40 @@ class Main:
                          fgoDevice.device.press('J')
                          return logger.info('No Storm Pot')
                      if Detect(.7,.3).isApEmpty()and not self.eatApple():return logger.info('Ap Empty')
@@ -868,7 +1546,7 @@ index edb952e..27821ee 100644
 +                    self.chooseFriend(classScoresAtLeast=self.friendClassScoreAtLeast,
 +                                      houguAtLeast=self.friendHouguAtLeast,
 +                                      allowedReisous=self.friendAllowedReisous,
-+                                      requireKizunaReisou=self.requireKizunaReisou,
++                                      requireKizunaReisou=self.friendRequireKizunaReisou,
 +                                      requireKizunaReisouToNP=self.friendRequireKizunaReisouToNP)
                      while not Detect(0,.3).isBattleFormation():pass
                      if self.teamIndex and Detect.cache.getTeamIndex()+1!=self.teamIndex:fgoDevice.device.perform('\x70\x71\x72\x73\x74\x75\x76\x77\x78\x79\x7A\x7B\x7C\x7D\x7E'[self.teamIndex-1],(1000,))
@@ -904,7 +1582,7 @@ index edb952e..27821ee 100644
                      schedule.sleep(6)
                      break
                  elif Detect.cache.isSkillCastFailed():
-@@ -541,7 +822,7 @@ class Main:
+@@ -541,7 +1126,7 @@ class Main:
          logger.warning('Eat Apple')
          return self.appleTotal+1
      @logit(logger,logging.INFO)
@@ -913,7 +1591,7 @@ index edb952e..27821ee 100644
          refresh=False
          while not Detect(0,.3).isChooseFriend():
              if Detect.cache.isNoFriend():
-@@ -549,12 +830,12 @@ class Main:
+@@ -549,12 +1134,12 @@ class Main:
                  fgoDevice.device.perform('\xBAK',(500,1000))
                  refresh=True
                  continue
@@ -928,7 +1606,7 @@ index edb952e..27821ee 100644
                      ClassicTurn.friendInfo=(lambda r:(lambda p:[
                          [[-1 if p[i*4+j]=='X'else int(p[i*4+j],16)for j in range(4)]for i in range(3)],
                          [-1 if p[i+12]=='X'else int(p[i+12],16)for i in range(2)],
-@@ -566,7 +847,9 @@ class Main:
+@@ -566,7 +1151,9 @@ class Main:
              if refresh:schedule.sleep(max(0,timer+10-time.time()))
              fgoDevice.device.perform('\xBAK',(500,1000))
              refresh=True
@@ -969,3 +1647,61 @@ index 98deec9..3d5949f 100644
          self.MENU_ABOUT_LICENSE.setText(QCoreApplication.translate("fgoMainWindow", u"\u4f7f\u7528\u8bb8\u53ef", None))
          self.MENU_FILE_QUIT.setText(QCoreApplication.translate("fgoMainWindow", u"\u9000\u51fa", None))
          self.MENU_CONTROL_TRAY.setText(QCoreApplication.translate("fgoMainWindow", u"\u5173\u95ed\u5230\u6258\u76d8", None))
+diff --git a/FGO-py/fgoMetadata.py b/FGO-py/fgoMetadata.py
+index f3a1d94..ceffc5f 100644
+--- a/FGO-py/fgoMetadata.py
++++ b/FGO-py/fgoMetadata.py
+@@ -657,6 +657,7 @@ missionMat=numpy.array((
+ missionTag=((),('å°æ€ª','å¤©'),('å°æ€ª','é­”æœ¯å¸ˆ'),('å°æ€ª','é—¨ç³»'),('å°æ€ª',),('å°æ€ª','äºº'),('å°æ€ª','æ­»çµ'),('å°æ€ª','é­”æ€§'),('å°æ€ª','å‰‘å£«'),('å°æ€ª','éª·é«…ç³»'),('å°æ€ª','æªå…µ'),('å°æ€ª','å¼“å…µ'),('å°æ€ª','åœ°'),('å°æ€ª','æš—åŒ¿è€…'),('å°æ€ª','ç”·æ€§'),('å°æ€ª','äººå‹'),('å°æ€ª','äººç±»'),('å°æ€ª','å£«å…µç³»'),('å°æ€ª','é¾™'),('å°æ€ª','éª‘å…µ'),('å°æ€ª','åŒè¶³é£é¾™ç³»'),('å°æ€ª','åƒµå°¸ç³»'),('å°æ€ª','çŒ›å…½'),('å°æ€ª','çŠ¬å‹'),('å°æ€ª','å…½äººç³»'),('å°æ€ª','ç½—é©¬'),('å°æ€ª','ç‹‚æˆ˜å£«'),('å°æ€ª','é­”å¶ç³»'),('å°æ€ª','é¬¼é­‚ç³»'),('å°æ€ª','å¥‡ç¾æ‹‰ç³»'),('å°æ€ª','å¯„å±…èŸ¹ç³»'),('å°æ€ª','å¥³æ€§'),('å°æ€ª','è›‡å¥³ç³»'),('å°æ€ª','å¸Œè…Šç¥è¯ç³»ç”·æ€§'),('å°æ€ª','åŠäººé©¬ç³»'),('å°æ€ª','äºšé©¬é€Šç³»'),('å°æ€ª','è‡ªåŠ¨äººå¶ç³»'),('å°æ€ª','äººå·¥ç”Ÿå‘½ä½“ç³»'),('å°æ€ª','ä¹¦é¡µç³»'),('å°æ€ª','æ··æ²Œæœºæ¢°å…µç³»'),('å°æ€ª','æœºæ¢°åŒ–æ­¥å…µç³»'),('å°æ€ª','å‡¯å°”ç‰¹å£«å…µç³»'),('å°æ€ª','å™¬é­‚è€…ç³»'),('å°æ€ª','æ¶é­”'),('å°æ€ª','å‡è§†è€…ç³»'),('å°æ€ª','åŒè§’å…½ç³»'),('å°æ€ª','è¶…å·¨å¤§'),('å°æ€ª','å®ˆæŠ¤è€…ç³»'),('å°æ€ª','ç¥æ€§'),('å°æ€ª','æ–¯èŠ¬å…‹æ–¯ç³»'),('å°æ€ª','ä¼Šå¤«åˆ©å¡”ç³»'),('å°æ€ª','å¤±å¿ƒè€…ç³»'),('å°æ€ª','éª‘å£«ç³»'),('å°æ€ª','è‡ªåŠ¨é˜²å«è£…ç½®ç³»'),('å°æ€ª','ä¹Œåˆ©è¿ªå§†ç³»'),('å°æ€ª','ä¹Œä¼½å°”ç³»'),('å°æ€ª','ç©†ä¿®èƒ¡ä¼‘ç³»'),('å°æ€ª','æµ·é­”ç³»'),('å°æ€ª','å·¨é¾™ç³»'),('å°æ€ª','é­”çŒªç³»'),('å°æ€ª','å·¨å¤§é­”çŒªç³»'),('å°æ€ª','æ¶'),('å°æ€ª','å°æ··æ··ç³»'),('å°æ€ª','é›€èœ‚ç³»'),('å°æ€ª','ç‹'),('å°æ€ª','æµæ°“ç³»'),('å°æ€ª','æ¶é­”ç³»'),('å°æ€ª','å¥³æµ·ç›—ç³»'),('å°æ€ª','é…·åç³»'),('å°æ€ª','è®¸å¾·æ‹‰ç³»'),('å°æ€ª','é»‘æ­¦è€…ç³»'),('å°æ€ª','é¬¼'),('å°æ€ª','ç§½ç¥ç³»'),('å°æ€ª','ç°ç‹¼ç³»'),('å°æ€ª','é£Ÿå°¸é¬¼ç³»'),('å°æ€ª','å¤å¡”å…‹é¸Ÿç³»'),('å°æ€ª','é›…å˜ç³»'),('å°æ€ª','æ€æˆ®çŒå…µç³»'),('å°æ€ª','å·¨äºº'),('å°æ€ª','ç“¦å°”åŸºé‡Œç³»'),('å°æ€ª','å¦å…‹ç³»'),('å°æ€ª','ç¦å«å…µç³»'),('å°æ€ª','è¿¦åˆ©ç³»'),('å°æ€ª','ä¼Ÿå¤§é‚£ä¼½ç³»'),('å°æ€ª','åˆ»è€³æŸæ´›æ–¯ç³»'),('å°æ€ª','äºšç‰¹å…°è’‚æ–¯é˜²å«å…µç³»'),('å°æ€ª','å¹¿åŸŸæ­¼ç­å…µå™¨ç³»'),('å°æ€ª','å¥¥æ—æ³¢æ–¯å…µç³»'),('å°æ€ª','åœŸèœ˜è››ç³»'),('å°æ€ª','å¤§ç¿é¬¼ç³»'),('å°æ€ª','æœºæ¢°'),('å°æ€ª','å°é¬¼ç³»'),('å°æ€ª','å¦–ç²¾'),('å°æ€ª','å¤ä»‡è€…'),('å°æ€ª','æ‘©å°”æ–¯ç³»'),('å°æ€ª','ç‰™ä¹‹æ°æ—ç³»'),('å°æ€ª','è‚ƒæ­£éª‘å£«ç³»'),('å°æ€ª','é¾™ç³»'),('å°æ€ª','æ‘©æ ¹å…µç³»'),('å°æ€ª','çš®å…‹ç‰¹äººç³»'),('å°æ€ª','å·¨äººç³»'),('å°æ€ª','ç¿…åˆƒè™«ç³»'),('å°æ€ª','ä»è€…','ç”·æ€§'),('å°æ€ª','ä»è€…','æš—åŒ¿è€…'),('å°æ€ª','ä»è€…','ç‹‚æˆ˜å£«'),('å°æ€ª','ä»è€…','äºº'),('å°æ€ª','ä»è€…','äººå‹'),('å°æ€ª','èŒé˜¶ä»è€…ç³»'),('å°æ€ª','ä»è€…'),('å°æ€ª','ä»è€…','å¥³æ€§'),('å°æ€ª','ä»è€…','å‰‘å£«'),('å°æ€ª','ä»è€…','é­”æœ¯å¸ˆ'),('å°æ€ª','ä»è€…','æ­»çµ'),('å°æ€ª','ä»è€…','å¤©'),('å°æ€ª','ä»è€…','é­”æ€§'),('å°æ€ª','ä»è€…','æªå…µ'),('å°æ€ª','æ–©é¦–é¸¡ç³»'),('å°æ€ª','ä»è€…','å¼“å…µ'),('å°æ€ª','ä»è€…','éª‘å…µ'),('å°æ€ª','ä»è€…','éª‘ä¹˜'),('å°æ€ª','å’’æ¯’è™«ç³»'),('ä»è€…','åœ°'),('ä»è€…','å¥³æ€§'),('ä»è€…','äººå‹'),('ä»è€…','ç¥æ€§'),('ä»è€…','éª‘ä¹˜'),('ä»è€…','éª‘å…µ'),('ä»è€…','æ··æ²Œ'),('ä»è€…','å–„'),('ä»è€…',),('ä»è€…','äºº'),('ä»è€…','ç”·æ€§'),('ä»è€…','æ‰€çˆ±ä¹‹äºº'),('ä»è€…','æªå…µ'),('ä»è€…','æš—åŒ¿è€…'),('ä»è€…','å’Œé£'),('ä»è€…','ç§©åº'),('ä»è€…','æ¶'),('ä»è€…','ç‹'),('ä»è€…','é¾™'),('ä»è€…','å‰‘å£«'),('ä»è€…','é˜¿å°”æ‰˜è‰é›…è„¸'),('ä»è€…','å¹¸è¿A+ä»¥ä¸Š'),('ä»è€…','ç‹‚æˆ˜å£«'),('ä»è€…','ç‹‚'),('ä»è€…','é­”æœ¯å¸ˆ'),('ä»è€…','è£å®šè€…'),('ä»è€…','ç½—é©¬'),('ä»è€…','ä¸­ç«‹'),('ä»è€…','ä¸­åº¸'),('ä»è€…','æ˜Ÿ'),('ä»è€…','å¸Œè…Šç¥è¯ç³»ç”·æ€§'),('ä»è€…','å¤©'),('ä»è€…','å¤ªé˜³'),('ä»è€…','å¼“å…µ'),('ä»è€…','äººç±»'),('ä»è€…','å“ˆæ¡‘ç³»'),('ä»è€…','çŒ›å…½'),('ä»è€…','å¤ä»‡è€…'),('ä»è€…','çŠ¬å‹'),('ä»è€…','é­”æ€§'),('ä»è€…','å…¶ä»–æ€§åˆ«'),('ä»è€…','é˜¿è€³æˆˆèˆ¹ç›¸å…³äººå‘˜'),('ä»è€…','å¤©åœ°ä»è€…'),('ä»è€…','äººç§‘'),('ä»è€…','æºæ°'),('ä»è€…','å­©ç«¥ä»è€…'),('ä»è€…','é¬¼'),('ä»è€…','å¦–ç²¾'),('ä»è€…','åœ†æ¡Œéª‘å£«'),('ä»è€…','é­”å…½å‹'),('åœºåœ°','ç‡ƒçƒ§'),('åœºåœ°','éƒ½å¸‚'),('åœºåœ°','åŸå¸‚'),('åœºåœ°','åœ°ä¸‹'),('åœºåœ°','é˜³å…‰ç…§å°„'),('åœºåœ°','å±±ä¸˜'),('åœºåœ°','æ£®æ—'),('åœºåœ°','åŸæ± '),('åœºåœ°','è’é‡'),('åœºåœ°','å±±'),('åœºåœ°','æ°´è¾¹'),('åœºåœ°','æ²™æ»©Â·æ²™æ¼ '),('åœºåœ°','ç¥æ®¿'),('åœºåœ°','å²©å±±'),('åœºåœ°','è‰åŸ'))
+ missionQuest=((0,0,0),(1,0,0,0),(1,0,1,0),(1,0,2,0),(1,0,3,0),(1,0,4,0),(1,0,5,0),(1,0,6,0),(1,0,7,0),(1,1,0,0),(1,1,1,0),(1,1,2,0),(1,1,3,0),(1,1,4,0),(1,1,5,0),(1,1,6,0),(1,1,7,0),(1,1,8,0),(1,1,9,0),(1,2,0,0),(1,2,1,0),(1,2,2,0),(1,2,3,0),(1,2,4,0),(1,2,5,0),(1,2,6,0),(1,2,7,0),(1,2,8,0),(1,2,9,0),(1,2,10,0),(1,3,0,0),(1,3,1,0),(1,3,2,0),(1,3,3,0),(1,3,4,0),(1,3,5,0),(1,3,6,0),(1,3,7,0),(1,3,7,1),(1,3,8,0),(1,3,9,0),(1,3,10,0),(1,4,0,0),(1,4,1,0),(1,4,2,0),(1,4,3,0),(1,4,4,0),(1,4,5,0),(1,4,6,0),(1,4,7,0),(1,4,8,0),(1,5,0,0),(1,5,1,0),(1,5,2,0),(1,5,3,0),(1,5,4,0),(1,5,5,0),(1,5,6,0),(1,5,7,0),(1,5,8,0),(1,5,9,0),(1,5,10,0),(1,5,11,0),(1,5,12,0),(1,5,13,0),(1,6,0,0),(1,6,1,0),(1,6,2,0),(1,6,3,0),(1,6,4,0),(1,6,5,0),(1,6,6,0),(1,6,7,0),(1,6,8,0),(1,6,9,0),(1,6,10,0),(1,6,11,0),(1,6,12,0),(1,6,13,0),(1,7,0,0),(1,7,1,0),(1,7,2,0),(1,7,3,0),(1,7,4,0),(1,7,5,0),(1,7,6,0),(1,7,7,0),(1,7,8,0),(1,7,9,0),(1,7,10,0),(1,7,11,0),(1,7,12,0),(1,7,13,0),(2,0,0,0),(2,0,1,0),(2,0,2,0),(2,0,3,0),(2,0,4,0),(2,0,5,0),(2,0,6,0),(2,0,7,0),(2,0,8,0),(2,0,9,0),(2,1,0,0),(2,1,1,0),(2,1,2,0),(2,1,3,0),(2,1,4,0),(2,1,5,0),(2,1,6,0),(2,1,7,0),(2,1,8,0),(2,1,9,0),(2,1,10,0),(2,1,11,0),(2,2,0,0),(2,2,1,0),(2,2,2,0),(2,2,3,0),(2,2,4,0),(2,2,5,0),(2,2,6,0),(2,2,6,1),(2,2,7,0),(2,3,0,0),(2,3,1,0),(2,3,2,0),(2,3,3,0),(2,3,4,0),(2,3,5,0),(2,3,6,0),(2,3,7,0),(2,3,8,0),(2,3,9,0),(2,3,10,0),(3,0,0,0),(3,0,1,0),(3,0,2,0),(3,0,3,0),(3,0,4,0),(3,0,5,0),(3,0,6,0),(3,0,7,0),(3,0,8,0),(3,0,9,0),(3,0,10,0),(3,0,11,0),(3,0,12,0),(3,0,13,0),(3,1,0,0),(3,1,1,0),(3,1,2,0),(3,1,3,0),(3,1,4,0),(3,1,5,0),(3,1,6,0),(3,1,7,0),(3,1,8,0),(3,1,9,0),(3,1,10,0),(3,2,0,0),(3,2,1,0),(3,2,2,0),(3,2,3,0),(3,2,4,0),(3,2,5,0),(3,2,6,0),(3,2,7,0),(3,2,8,0),(3,2,9,0),(3,2,10,0),(3,3,0,0),(3,3,1,0),(3,3,2,0),(3,3,3,0),(3,3,4,0),(3,3,5,0),(3,3,6,0),(3,3,7,0),(3,3,8,0),(3,3,9,0),(3,4,0,0),(3,4,1,0),(3,4,2,0),(3,4,3,0),(3,4,4,0),(3,4,5,0),(3,4,6,0),(3,4,7,0),(3,4,8,0),(3,5,0,0),(3,5,1,0),(3,5,2,0),(3,5,3,0),(3,5,4,0),(3,5,5,0),(3,5,6,0),(3,5,7,0),(3,5,8,0),(3,5,9,0),(3,5,10,0),(4,0,0,0),(4,0,1,0),(4,0,2,0),(4,0,3,0),(4,0,4,0),(4,0,5,0),(4,0,6,0),(4,0,7,0),(4,0,8,0),(4,0,9,0),(4,0,10,0),(4,0,11,0),(4,0,12,0),(3,6,0,0),(3,6,1,0),(3,6,2,0),(3,6,3,0),(3,6,4,0),(3,6,5,0),(3,6,6,0),(3,6,7,0),(3,6,8,0),(3,6,9,0),(3,6,10,0),(3,6,11,0),(3,6,12,0),(3,6,13,0),(3,6,14,0),(3,6,15,0),(4,1,0,0),(4,1,1,0),(4,1,2,0),(4,1,3,0),(4,1,4,0),(4,1,5,0),(4,1,6,0),(4,1,7,0),(4,1,8,0),(4,1,9,0),(4,1,10,0),(4,1,11,0),(4,1,12,0),(4,1,13,0),(4,1,14,0),(4,1,15,0))
+ quest=missionQuest+((3,7,0,0),(3,7,1,0),(3,7,2,0),(3,7,3,0),(3,7,4,0),(3,7,5,0),(3,7,6,0),(3,7,7,0),(3,7,8,0),(3,7,9,0),(3,7,10,0),(3,7,11,0),(3,7,12,0),(3,7,13,0),(3,7,14,0),(3,7,15,0),(5,0,0,0),(5,0,1,0),(5,0,2,0),(5,0,2,1),(5,0,3,0),(5,0,4,0),(5,0,5,0),(5,0,6,0),(5,0,7,0),(5,0,8,0),(5,0,9,0),(5,0,10,0),(5,0,11,0),(5,0,11,1),(5,0,12,0),(5,0,13,0),(5,0,14,0),(5,1,0,0),(5,1,1,0),(5,1,2,0),(5,1,3,0),(5,1,4,0),(5,1,5,0),(5,1,6,0),(5,1,7,0),(5,1,8,0),(5,1,9,0),(5,1,10,0))
++grandQuest=((99,1,0),(99,2,0),(99,3,0),(99,4,0),(99,5,0),(99,6,0),(99,7,0),(99,8,0),(99,9,0))
+ def readSplit(file,height):return(lambda img:[(lambda x:(x[...,:3],x[...,3]))(img[i*height:(i+1)*height])for i in range(img.shape[0]//height)])(cv2.imread(file,cv2.IMREAD_UNCHANGED))
+ servantImg={i:(
+     readSplit(f'fgoImage/servant/{i}/card.png',47),
+@@ -669,3 +670,4 @@ chapterImg={tuple(int(i)for i in i[:-4].split('-')):cv2.imread(f'fgoImage/map/en
+ mapImg={tuple(int(i)for i in i[:-4].split('-')):cv2.imread(f'fgoImage/map/atlas/{i}')for i in os.listdir('fgoImage/map/atlas')}
+ questImg={int(i[:-4]):cv2.imread(f'fgoImage/map/{i}')for i in os.listdir('fgoImage/map')if i.endswith('.png')}
+ questImg[4]=questImg[3]
++grandImg={tuple(int(i)for i in i[:-4].split('-')):cv2.imread(f'fgoImage/map/grandBattle/{i}')for i in os.listdir('fgoImage/map/grandBattle')}
+diff --git a/FGO-py/fgoReishift.py b/FGO-py/fgoReishift.py
+index 1a9ec6f..8cabb98 100644
+--- a/FGO-py/fgoReishift.py
++++ b/FGO-py/fgoReishift.py
+@@ -49,6 +49,20 @@ class OrdaelCall:
+         if self.coord:
+             fgoDevice.device.perform('\x67'+''.join(i*j for i,j in zip('\x25\x26\x27\x28',self.move)),(1000,)+(2000,)*sum(self.move))
+             fgoDevice.device.touch(self.coord)
++class GrandBattle:
++    def __init__(self, name):
++        self.name=name
++    def __call__(self):
++        while not Detect(1).isMainInterface():pass
++        schedule.sleep(5)
++        while not Detect(1).findGrandBattle(self.name):
++            fgoDevice.device.touch((224,500))   # press the down button
++            schedule.sleep(5)
++        fgoDevice.device.touch((1014,575))
++        schedule.sleep(5)
++        for _ in range(4):
++            fgoDevice.device.swipe((1000,600),(1000,200))
++            schedule.sleep(.7)
+ 
+ place={i.name:i for i in(
+ List((0,)),List((1,)),List((2,)),List((4,)),List((5,)),
+@@ -57,6 +71,7 @@ List((1,0)),List((1,1)),List((1,2)),List((1,3)),List((1,4)),List((1,5)),List((1,
+ List((2,0)),List((2,1)),List((2,2)),List((2,3)),
+ List((3,0)),List((3,1)),List((3,2)),List((3,3)),List((3,4)),List((3,5)),List((3,6)),List((3,7)),
+ List((4,0)),List((4,1)),
++List((99,)),
+ OrdaelCall((5,1),0,(1103,183)),
+ Map((1,0,0),(770,415)),Map((1,0,1),(898,910)),Map((1,0,2),(1397,635)),Map((1,0,3),(1483,318)),Map((1,0,4),(1941,869)),Map((1,0,5),(582,748)),Map((1,0,6),(374,1006)),Map((1,0,7),(382,552)),
+ Map((1,1,0),(1689,385)),Map((1,1,1),(1536,314)),Map((1,1,2),(1227,557)),Map((1,1,3),(1576,634)),Map((1,1,4),(1554,883)),Map((1,1,5),(1030,780)),Map((1,1,6),(864,424)),Map((1,1,7),(1030,212)),Map((1,1,8),(1754,1086)),Map((1,1,9),(504,933)),
+@@ -93,6 +108,7 @@ OrdaelCall((5,0,5),1,(566,165)),OrdaelCall((5,0,6),0,(437,473)),
+ OrdaelCall((5,0,7),1,(905,238)),OrdaelCall((5,0,8),0,(401,338)),OrdaelCall((5,0,9),1,(604,640)),OrdaelCall((5,0,10),1,(873,357)),
+ OrdaelCall((5,0,11),0),OrdaelCall((5,0,12),0,(475,332)),OrdaelCall((5,0,13),2,(670,627),(0,1,0,0)),OrdaelCall((5,0,14),0,(838,467)),
+ Map((5,1,0),(805,1684)),Map((5,1,1),(1222,1723)),Map((5,1,2),(1197,1321)),Map((5,1,3),(980,1046)),Map((5,1,4),(1010,1238)),Map((5,1,5),(1391,1055)),Map((5,1,6),(824,930)),Map((5,1,7),(1830,1355)),Map((5,1,8),(1654,1176)),Map((5,1,9),(562,1373)),Map((5,1,10),(793,1121)),
++GrandBattle((99,1)),GrandBattle((99,2)),GrandBattle((99,3)),GrandBattle((99,4)),GrandBattle((99,5)),GrandBattle((99,6)),GrandBattle((99,7)),GrandBattle((99,8)),GrandBattle((99,9)),
+ )}
+ def reishift(quest):
+     for i in range(1,len(quest)):
