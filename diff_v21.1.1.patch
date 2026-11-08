@@ -144,7 +144,7 @@ index 7fb5e4d..e9c1e22 100644
  'closeToTray':False,
  'notifyEnable':False,
 diff --git a/FGO-py/fgoDetect.py b/FGO-py/fgoDetect.py
-index 1f70686..20efed6 100644
+index 1f70686..a74f85d 100644
 --- a/FGO-py/fgoDetect.py
 +++ b/FGO-py/fgoDetect.py
 @@ -3,7 +3,7 @@ from functools import reduce,wraps
@@ -218,7 +218,7 @@ index 1f70686..20efed6 100644
      def getFieldServantHp(self,pos):return self._ocrInt((200+317*pos,620,293+317*pos,644))
      def getFieldServantNp(self,pos):return self._ocrInt((220+317*pos,655,271+317*pos,680))
      def getMaterial(self):return(lambda x:{materialImg[i][0]:x.count(i)for i in set(x)-{None}})([self._select(((i[1],None)for i in materialImg),(176+i%7*137,110+i//7*142,253+i%7*137,187+i//7*142),.02)for i in range(1,21)])
-@@ -168,6 +200,56 @@ class XDetectBase(metaclass=logMeta(logger)):
+@@ -168,6 +200,57 @@ class XDetectBase(metaclass=logMeta(logger)):
      @retryOnError()
      @validate()
      def getStageTotal(self):return self._ocrInt((912,13,932,38))
@@ -233,7 +233,8 @@ index 1f70686..20efed6 100644
 +        #     pass
 +
 +        # find the position of slash
-+        slash_center_coord = self._find(self.tmpl.SLASH, (662,328,800,365), .2)
++        slash_center_coord = self._find(self.tmpl.SLASH, (662,328,818,385), .2)
++        # y2 = 385, instead of 365 for grand battle using storm pods
 +        # originally, (662,328,800,365) -> (656,363,800,432)
 +
 +        curr_ap_line_top = slash_center_coord[1] - (self.tmpl.SLASH[0].shape[0]>>1)
@@ -241,10 +242,10 @@ index 1f70686..20efed6 100644
 +        slash_left = slash_center_coord[0] - (self.tmpl.SLASH[0].shape[1]>>1)
 +        slash_right = slash_center_coord[0] + (self.tmpl.SLASH[0].shape[1]>>1)
 +        # self.save(name="ocr_ap_to_consume", rect=(662,curr_ap_line_top-36,800,curr_ap_line_top))
-+        ap_to_consume = self._ocrInt((662,curr_ap_line_top-36,800,curr_ap_line_top))    # originally, 662 -> 728
++        ap_to_consume = self._ocrInt((662,curr_ap_line_top-36,818,curr_ap_line_top))    # originally, 662 -> 728
 +        ap_enough = True
 +        for i in range(curr_ap_line_top-36, curr_ap_line_top):
-+            for j in range(662, 800):
++            for j in range(662, 818):
 +                if self.im[i, j, 0] < 10 and self.im[i, j, 1] < 10 and self.im[i, j, 2] > 200:
 +                    ap_enough = False   # if any pixel is red, then AP is not enough
 +                    break
@@ -269,13 +270,13 @@ index 1f70686..20efed6 100644
 +            print("potential error in OCR, setting ap_current to 0")
 +            ap_current = 0
 +
-+        # self.save(name="ocr_ap_full", rect=(slash_right,curr_ap_line_top,800,curr_ap_line_btm))
-+        ap_full = self._ocrInt((slash_right,curr_ap_line_top,800,curr_ap_line_btm))
++        # self.save(name="ocr_ap_full", rect=(slash_right,curr_ap_line_top,818,curr_ap_line_btm))
++        ap_full = self._ocrInt((slash_right,curr_ap_line_top,818,curr_ap_line_btm))
 +        return ap_to_consume, ap_current, ap_full
      def getSummonHistory(self):XDetectBase._summonHistory=self._stack(XDetectBase._summonHistory,cv2.threshold(cv2.cvtColor(self._crop((147,157,1105,547)),cv2.COLOR_BGR2GRAY),128,255,cv2.THRESH_BINARY)[1],80)
      @classmethod
      def getSummonHistoryCount(cls):return cls.__new__(cls).inject(XDetectBase._summonHistory)._count((cls.tmpl.SUMMONHISTORY[0][...,0],cls.tmpl.SUMMONHISTORY[1]),(28,0,60,XDetectBase._summonHistory.shape[0]),.7)
-@@ -177,7 +259,150 @@ class XDetectBase(metaclass=logMeta(logger)):
+@@ -177,7 +260,150 @@ class XDetectBase(metaclass=logMeta(logger)):
      def getTeamServantClassRank(self):return[(lambda x:x if x is None else classImg[0][x])(self._select(CLASS[100],(30+200*i+15*(i>2),133,115+200*i+15*(i>2),203)))for i in range(6)]
      def getWeeklyMission(self):XDetectBase._weeklyMission=self._stack(XDetectBase._weeklyMission,self._crop((603,250,1092,710)),157)
      def findChapter(self,chapter):return self._find((chapterImg[chapter],None),(640,90,1230,600))
@@ -427,7 +428,7 @@ index 1f70686..20efed6 100644
      def findMail(self,img):return self._find(img,(73,166,920,720),.017)
      def findMapCamera(self,chapter):return numpy.array(cv2.minMaxLoc(cv2.matchTemplate(mapImg[chapter],cv2.resize(self._crop((200,200,1080,520)),(0,0),fx=.3,fy=.3,interpolation=cv2.INTER_CUBIC),cv2.TM_SQDIFF_NORMED))[2])/.3+(440,160)
      @classmethod
-@@ -206,6 +431,19 @@ class XDetectCN(XDetectBase):
+@@ -206,6 +432,19 @@ class XDetectCN(XDetectBase):
                  mission=''
              else:mission+=i
          return result
@@ -447,7 +448,7 @@ index 1f70686..20efed6 100644
  class XDetectJP(XDetectBase):
      tmpl=IMG_JP
      ocr=OCR.JA
-@@ -222,7 +460,7 @@ class DetectBase(XDetectBase):
+@@ -222,7 +461,7 @@ class DetectBase(XDetectBase):
      def __init__(self,anteLatency=.1,postLatency=0):
          schedule.sleep(anteLatency)
          super().__init__()
@@ -904,7 +905,7 @@ index 234771d..a39059d 100644
          self.ends=ends
          self.listener=DirListener(path)
 diff --git a/FGO-py/fgoKernel.py b/FGO-py/fgoKernel.py
-index edb952e..886d831 100644
+index edb952e..ecfd014 100644
 --- a/FGO-py/fgoKernel.py
 +++ b/FGO-py/fgoKernel.py
 @@ -17,10 +17,12 @@
@@ -939,7 +940,7 @@ index edb952e..886d831 100644
  @serialize(mutex)
  def weeklyMission():
      while not Detect(0,1).isMainInterface():pass
-@@ -414,12 +417,258 @@ class Turn:
+@@ -414,12 +417,259 @@ class Turn:
          else:fgoDevice.device.perform('\x08',(700,))
          while not Detect().isTurnBegin():pass
          Detect(.5)
@@ -1196,10 +1197,11 @@ index edb952e..886d831 100644
 +    def getNP(self): return [Detect.cache.getFieldServantNp(i) for i in range(3)]
 +    def getServantHP(self): return [Detect.cache.getFieldServantHp(i)if self.servant[i][0]else 999999 for i in range(3)]
 +
++
  class Battle:
      def __init__(self,turnClass=Turn):
          self.turn=0
-@@ -462,10 +711,22 @@ class Battle:
+@@ -462,10 +712,22 @@ class Battle:
  class Main:
      teamIndex=0
      autoFormation=False
@@ -1223,7 +1225,7 @@ index edb952e..886d831 100644
      @serialize(mutex)
      def __call__(self,questIndex=0,battleTotal=None):
          self.prepare()
-@@ -473,7 +734,7 @@ class Main:
+@@ -473,7 +735,7 @@ class Main:
              self.battleProc=self.battleClass()
              while True:
                  if Detect(.3,.3).isMainInterface():
@@ -1232,7 +1234,7 @@ index edb952e..886d831 100644
                      fgoDevice.device.press('84L'[questIndex])
                      questIndex=0
                      if Detect(1.2).isBattleContinue():fgoDevice.device.press('K')
-@@ -481,19 +742,40 @@ class Main:
+@@ -481,19 +743,40 @@ class Main:
                          fgoDevice.device.press('J')
                          return logger.info('No Storm Pot')
                      if Detect(.7,.3).isApEmpty()and not self.eatApple():return logger.info('Ap Empty')
@@ -1276,7 +1278,7 @@ index edb952e..886d831 100644
                      schedule.sleep(6)
                      break
                  elif Detect.cache.isSkillCastFailed():
-@@ -541,7 +823,7 @@ class Main:
+@@ -541,7 +824,7 @@ class Main:
          logger.warning('Eat Apple')
          return self.appleTotal+1
      @logit(logger,logging.INFO)
@@ -1285,7 +1287,7 @@ index edb952e..886d831 100644
          refresh=False
          while not Detect(0,.3).isChooseFriend():
              if Detect.cache.isNoFriend():
-@@ -549,12 +831,12 @@ class Main:
+@@ -549,12 +832,12 @@ class Main:
                  fgoDevice.device.perform('\xBAK',(500,1000))
                  refresh=True
                  continue
@@ -1300,7 +1302,7 @@ index edb952e..886d831 100644
                      ClassicTurn.friendInfo=(lambda r:(lambda p:[
                          [[-1 if p[i*4+j]=='X'else int(p[i*4+j],16)for j in range(4)]for i in range(3)],
                          [-1 if p[i+12]=='X'else int(p[i+12],16)for i in range(2)],
-@@ -566,7 +848,9 @@ class Main:
+@@ -566,7 +849,9 @@ class Main:
              if refresh:schedule.sleep(max(0,timer+10-time.time()))
              fgoDevice.device.perform('\xBAK',(500,1000))
              refresh=True
