@@ -20,31 +20,10 @@ index 7e0c18f..1c2de81 100644
              self.rotation_watcher.reg_callback(lambda _:self.adjustOffset())
          except Exception as e:
 diff --git a/FGO-py/fgoCli.py b/FGO-py/fgoCli.py
-index 44dc241..2324a8b 100644
+index 44dc241..c5792aa 100644
 --- a/FGO-py/fgoCli.py
 +++ b/FGO-py/fgoCli.py
-@@ -42,6 +42,20 @@ Some commands support <command> [<subcommand> ...] {{-h, --help}} for further in
-         fgoKernel.schedule.stopOnDefeated(self.config.stopOnDefeated)
-         fgoKernel.schedule.stopOnKizunaReisou(self.config.stopOnKizunaReisou)
-         fgoKernel.Main.teamIndex=self.config.teamIndex
-+    def get_real_class_name(self, vague_name):
-+        import ast
-+        with open("fgoKernel.py", "r", encoding="utf-8") as f:
-+            tree = ast.parse(f.read())
-+        class_names = [node.name for node in ast.walk(tree) if isinstance(node, ast.ClassDef)]
-+        matched_name = ""
-+        for name in class_names:
-+            if re.search(r"^" + vague_name, name):
-+                assert matched_name == "", "the turnClass provided should not match multiple class names\n"
-+                matched_name = name
-+        assert matched_name != "", f"The provided vague Turn class name {vague_name} does not match any of " \
-+                                   f"the class names in fgoKernel.py: {', '.join(class_names)}"
-+        print("Matched real Turn class name:", matched_name)
-+        return matched_name
-     def emptyline(self):return
-     def precmd(self,line):
-         if line:logger.info(line)
-@@ -49,13 +63,21 @@ Some commands support <command> [<subcommand> ...] {{-h, --help}} for further in
+@@ -49,13 +49,23 @@ Some commands support <command> [<subcommand> ...] {{-h, --help}} for further in
          return line
      def postcmd(self,stop,line):
          if not stop and line:logger.info(f'Done in {time.time()-self.time:.3f}s')
@@ -62,32 +41,26 @@ index 44dc241..2324a8b 100644
          'Finish the current battle'
          arg=parser_battle.parse_args(line.split())
 -        self.work=fgoKernel.Battle()
-+        real_class_name = self.get_real_class_name(arg.turnClass)
-+        self.work=eval(f'lambda:fgoKernel.Battle(fgoKernel.{real_class_name})')
++        # the quest config's "default" entry picks the Turn class; no turnClass there means the plain Battle()
++        # QuestConfig.parse already resolved turnClass (abbreviations included) into a 'battleClass' factory
++        battleClass=fgoKernel.QuestConfig(arg.questConfig).default.get('battleClass')if arg.questConfig else None
++        self.work=battleClass()if battleClass else fgoKernel.Battle()
          self.do_continue(f'-s {arg.sleep}')
      def do_bench(self,line):
          'Benchmark'
-@@ -154,7 +176,18 @@ Some commands support <command> [<subcommand> ...] {{-h, --help}} for further in
+@@ -154,7 +164,10 @@ Some commands support <command> [<subcommand> ...] {{-h, --help}} for further in
          'Loop for battle until AP empty'
          arg=parser_main.parse_args(line.split())
          fgoKernel.schedule.stopLater(arg.appoint)
 -        self.work=fgoKernel.Operation(arg.quest,arg.appleCount,['gold','silver','bronze','copper','quartz'].index(arg.appleKind),wait=arg.wait)
-+
-+        real_class_name = self.get_real_class_name(arg.turnClass)
-+        assert type(arg.friendClassScoreAtLeast) == int or (len(arg.friendClassScoreAtLeast) in [0,1,2] and (isinstance(arg.friendClassScoreAtLeast, list) or isinstance(arg.friendClassScoreAtLeast, tuple)))
 +        self.work=fgoKernel.Operation(arg.quest,arg.appleCount,['gold','silver','bronze','copper','quartz'].index(arg.appleKind),wait=arg.wait,
-+                                      battleClass=eval("lambda:fgoKernel.Battle(fgoKernel."+real_class_name+")"),
++                                      questConfig=arg.questConfig,
 +                                      waitForAp=arg.waitForAp,
-+                                      battleTotal=arg.appoint,
-+                                      friendClassScoreAtLeast=arg.friendClassScoreAtLeast,
-+                                      friendHouguAtLeast=arg.friendHouguAtLeast,
-+                                      friendAllowedReisous=arg.friendAllowedReisous,
-+                                      friendRequireKizunaReisou=arg.friendRequireKizunaReisou,
-+                                      friendRequireKizunaReisouToNP=arg.friendRequireKizunaReisouToNP)
++                                      battleTotal=arg.appoint)
          self.do_continue(f'-s {arg.sleep}')
      def complete_main(self,text,line,begidx,endidx):
          return self.completecommands({
-@@ -239,6 +272,8 @@ Some commands support <command> [<subcommand> ...] {{-h, --help}} for further in
+@@ -239,6 +252,8 @@ Some commands support <command> [<subcommand> ...] {{-h, --help}} for further in
          'Adapt none 16:9 screen'
          arg=parser_169.parse_args(line.split())
          assert fgoDevice.device.available
@@ -96,29 +69,25 @@ index 44dc241..2324a8b 100644
          getattr(fgoDevice.device,f'{arg.action}169')()
      def complete_169(self,text,line,begidx,endidx):
          return self.completecommands({
-@@ -265,6 +300,7 @@ class ArgStruct:
+@@ -265,6 +280,7 @@ class ArgStruct:
  
  parser_battle=ArgParser(prog='battle',description=Cmd.do_battle.__doc__)
  parser_battle.add_argument('-s','--sleep',help='Sleep before run (default: %(default)s)',type=validator(str,lambda x:re.match(r'\d+([:.]\d+)*$',x),'timedelta'),default='0')
-+parser_battle.add_argument('-t','--turnClass',type=str,default='Turn')
++parser_battle.add_argument('-c','--questConfig',help='JSON file giving per-quest turnClass (see fgoKernel.QuestConfig)',default=None)
  
  parser_bench=ArgParser(prog='bench',description=Cmd.do_bench.__doc__)
  parser_bench.add_argument('-n','--number',help='Number of runs (default: %(default)s)',type=validator(int,lambda x:x>=3,'not-less-than-3 int'),default=20)
-@@ -290,6 +326,13 @@ parser_main.add_argument('-s','--sleep',help='Sleep before run (default: %(defau
+@@ -290,6 +306,9 @@ parser_main.add_argument('-s','--sleep',help='Sleep before run (default: %(defau
  parser_main.add_argument('-a','--appoint',help='Battle count limit (default: %(default)s for no limit)',type=validator(int,lambda x:x>=0,'nonnegative int'),default=0)
  parser_main.add_argument('-q','--quest',help='Goto different quests for different times',action='append',type=ArgStruct(lambda x:tuple(int(i)for i in x.split('-')),validator(int,lambda x:x>=0,'nonnegative int')),default=[],nargs=2)
  parser_main.add_argument('-w','--wait',help='When quest set, wait before each quest to ensure sufficient AP',action='store_true')
 +parser_main.add_argument('-t','--turnClass',type=str,default='Turn')
++parser_main.add_argument('-c','--questConfig',help='JSON file giving per-quest turnClass / friend image / friend filters (see fgoKernel.QuestConfig)',default=None)
 +parser_main.add_argument('--waitForAp',help='Wait for AP refill after each battle when AP is insufficient', action='store_true')
-+parser_main.add_argument('-cs','--friendClassScoreAtLeast',nargs='*',type=int,default=[],help="accept 1 or 2 integers as the minimum class score for selecting friend servant")
-+parser_main.add_argument('-hl','--friendHouguAtLeast',help="hougu level 0~5; 0 means no requirement",default=0,type=validator(int,lambda x: 0<=x<=5,'hougu level 0~5; 0 means no requirement'))
-+parser_main.add_argument('-r','--friendAllowedReisous',nargs='*',type=str,choices=["kizuna10", "kizuna15"],default=[],help="list of allowed reisous for selecting friend servant; empty means no requirement")
-+parser_main.add_argument('-k','--friendRequireKizunaReisou',help="require friend's servant has a kizuna reisou but does not convert it to 50NP, only used in grand battles",action='store_true')
-+parser_main.add_argument('-n','--friendRequireKizunaReisouToNP',help="require friend's servant has a kizuna reisou and converts it to 50NP, only used in grand battles",action='store_true')
  
  parser_press=ArgParser(prog='press',description=Cmd.do_press.__doc__)
  parser_press.add_argument('button',help='Button',type=str.upper)
-@@ -328,6 +371,6 @@ parser_week.add_argument('-c','--cmd',help='Print cmd line instead of pretty lis
+@@ -328,6 +347,6 @@ parser_week.add_argument('-c','--cmd',help='Print cmd line instead of pretty lis
  parser_week.add_argument('-e','--exec',help='Execute the solved quest queue',action='store_true')
  
  parser_169=ArgParser(prog='169',description=Cmd.do_169.__doc__)
@@ -127,24 +96,20 @@ index 44dc241..2324a8b 100644
  
  def main(config):Cmd(config).cmdloop()
 diff --git a/FGO-py/fgoConst.py b/FGO-py/fgoConst.py
-index 7fb5e4d..e9c1e22 100644
+index 7fb5e4d..ed39279 100644
 --- a/FGO-py/fgoConst.py
 +++ b/FGO-py/fgoConst.py
-@@ -6,6 +6,12 @@ CONFIG={
+@@ -6,6 +6,8 @@ CONFIG={
  'farming':False,
  'stopOnDefeated':True,
  'stopOnKizunaReisou':True,
 +'waitForAp':False,
-+'friendClassScoreAtLeast':[],
-+'friendHouguAtLeast':0,
-+'friendAllowedReisous':[],
-+'friendRequireKizunaReisou':False,
-+'friendRequireKizunaReisouToNP':False,
++'questConfig':'',
  'stayOnTop':False,
  'closeToTray':False,
  'notifyEnable':False,
 diff --git a/FGO-py/fgoDetect.py b/FGO-py/fgoDetect.py
-index 1f70686..a74f85d 100644
+index 1f70686..f41b556 100644
 --- a/FGO-py/fgoDetect.py
 +++ b/FGO-py/fgoDetect.py
 @@ -3,7 +3,7 @@ from functools import reduce,wraps
@@ -428,7 +393,15 @@ index 1f70686..a74f85d 100644
      def findMail(self,img):return self._find(img,(73,166,920,720),.017)
      def findMapCamera(self,chapter):return numpy.array(cv2.minMaxLoc(cv2.matchTemplate(mapImg[chapter],cv2.resize(self._crop((200,200,1080,520)),(0,0),fx=.3,fy=.3,interpolation=cv2.INTER_CUBIC),cv2.TM_SQDIFF_NORMED))[2])/.3+(440,160)
      @classmethod
-@@ -206,6 +432,19 @@ class XDetectCN(XDetectBase):
+@@ -193,6 +419,7 @@ class XDetectBase(metaclass=logMeta(logger)):
+     def getTeamServantHouguLv(self):raise NotImplementedError
+     def getTeamServantRank(self):raise NotImplementedError
+     def getTeamServantSkillLv(self):raise NotImplementedError
++    def findLogin(self,img,threshold=.5):return self._find(img,(0,0,1280,720),threshold)
+ class XDetectCN(XDetectBase):
+     tmpl=IMG_CN
+     ocr=OCR.ZHS
+@@ -206,6 +433,19 @@ class XDetectCN(XDetectBase):
                  mission=''
              else:mission+=i
          return result
@@ -448,7 +421,7 @@ index 1f70686..a74f85d 100644
  class XDetectJP(XDetectBase):
      tmpl=IMG_JP
      ocr=OCR.JA
-@@ -222,7 +461,7 @@ class DetectBase(XDetectBase):
+@@ -222,7 +462,7 @@ class DetectBase(XDetectBase):
      def __init__(self,anteLatency=.1,postLatency=0):
          schedule.sleep(anteLatency)
          super().__init__()
@@ -458,13 +431,46 @@ index 1f70686..a74f85d 100644
      def _compare(self,*args,**kwargs):return super()._compare(*args,**kwargs)and fuse.reset(self)
      def _find(self,*args,**kwargs):
 diff --git a/FGO-py/fgoDevice.py b/FGO-py/fgoDevice.py
-index 92541a2..cbfe833 100644
+index 92541a2..1a19553 100644
 --- a/FGO-py/fgoDevice.py
 +++ b/FGO-py/fgoDevice.py
-@@ -47,6 +47,14 @@ class Device:
+@@ -1,5 +1,6 @@
+ from fgoAndroid import Android
+-from fgoDetect import setup
++from fgoDetect import setup,XDetect
++from fgoImageListener import ImageListener
+ from fgoLogging import getLogger
+ from fgoSchedule import schedule
+ logger=getLogger('Device')
+@@ -47,6 +48,62 @@ class Device:
      def available(self):return self.I.available and(self.I is self.O or self.O.available)
      def perform(self,pos,wait):[(self.press(i),schedule.sleep(j*.001))for i,j in zip(pos,wait)]
      def touch(self,pos,wait=0):(self.I.touch(pos),schedule.sleep(wait*.001))
++    @property
++    def isEmulator(self):return str(self.I.name or'').startswith(('127.0.0.1','localhost','emulator','[::1]'))
++    def restartFGO(self):
++        # Emulator (localhost adb serial): restart the whole emulator process; other devices: only restart the app.
++        if self.isEmulator:
++            try:return self.restartEmulator()
++            except Exception as e:logger.exception(e);logger.warning('Restarting emulator failed, fall back to restarting app only')
++        self.returnHomeAndClearFGOBackgroundAndRestart()
++    def restartEmulator(self):
++        # Configured by env: FGO_EMULATOR_PATH (executable, required), FGO_EMULATOR_PROCESS (process name to kill, default basename of the path),
++        # FGO_EMULATOR_ARGS (launch args, {package} is substituted, default "-p {package} -v 0" as MuMuPlayer), FGO_EMULATOR_WAIT (seconds, default 20)
++        import os,shlex,subprocess,time,psutil
++        path=os.environ.get('FGO_EMULATOR_PATH')
++        if not path:raise RuntimeError('FGO_EMULATOR_PATH is not set')
++        process=os.environ.get('FGO_EMULATOR_PROCESS')or os.path.basename(path)
++        args=shlex.split(os.environ.get('FGO_EMULATOR_ARGS','-p {package} -v 0').format(package=self.I.package),posix=os.name!='nt')
++        for i in psutil.process_iter(['pid','name']):
++            if i.info['name']and process.lower()in i.info['name'].lower():
++                logger.warning(f'Kill {i.info["name"]} (PID {i.info["pid"]})')
++                try:i.kill()
++                except Exception as e:logger.exception(e)
++        schedule.sleep(3)
++        logger.warning(f'Launch {path} {args}')
++        subprocess.Popen([path,*args])
++        schedule.sleep(float(os.environ.get('FGO_EMULATOR_WAIT',20)))
 +    def returnHomeAndClearFGOBackgroundAndRestart(self):
 +        self.I.adb.shell("input keyevent 3")
 +        import time
@@ -473,14 +479,37 @@ index 92541a2..cbfe833 100644
 +        time.sleep(5)
 +        self.I.adb.shell("am start -n " + self.I.package + "/.EmptyClass")
 +        time.sleep(5)
++    def waitLogin(self,timeout=120,loginDir='fgoImage/login/',flagDir='fgoImage/login/flag/'):
++        # Taps through the login screens after a restart until a flag image (home screen marker) shows up.
++        # XDetect (not Detect) is used on purpose: Detect feeds the fuse, which would re-enter the restart logic.
++        import os,time
++        if not os.path.isdir(loginDir)or not os.path.isdir(flagDir):
++            logger.warning(f'Login images not found in {loginDir}, skip waiting for login')
++            return False
++        login,flag=ImageListener(loginDir),ImageListener(flagDir)
++        end=time.time()+timeout
++        while time.time()<end:
++            schedule.sleep(.5)
++            detect=XDetect()
++            if any(detect.findLogin(i,.05)for i in flag.values()):
++                logger.info('Login finished')
++                return True
++            for name,i in login.items():
++                if pos:=detect.findLogin(i,.1):
++                    logger.info(f'Login screen {name} at {pos}')
++                    self.touch(pos)
++                    end=time.time()+timeout
++                    break
++        logger.warning(f'Login not finished within {timeout}s')
++        return False
      enumDevices=Android.enumDevices
      def __getattr__(self,attr):return getattr(self.I,attr,getattr(self.O,attr))
  
 diff --git a/FGO-py/fgoFuse.py b/FGO-py/fgoFuse.py
-index 9e67142..7c64ff0 100644
+index 9e67142..3c9736e 100644
 --- a/FGO-py/fgoFuse.py
 +++ b/FGO-py/fgoFuse.py
-@@ -1,22 +1,84 @@
+@@ -1,22 +1,44 @@
 +import time
 +
  from fgoLogging import getLogger
@@ -509,6 +538,7 @@ index 9e67142..7c64ff0 100644
 +            if not self.rebooted:
 +                fgoDevice.device.returnHomeAndClearFGOBackgroundAndRestart()
 +                fgoDevice.device = fgoDevice.Device(fgoDevice.device.name)
++                fgoDevice.device.waitLogin()
 +                self.rebooted=True
 +            else:
 +                if not self.reenter_pressed:
@@ -520,47 +550,6 @@ index 9e67142..7c64ff0 100644
 +                traceback.print_stack()
 +                raise ScriptStop('Fused')
 +
-+            # offset = self.value - self.max
-+            # # Spread key presses across frames so screenshots & detection run between presses.
-+            # # This lets detection observe whether the device responded and call reset() if so.
-+            # if offset == 1:
-+            #     detect.save(name="FuseBeforePress_0")
-+            #     print(datetime.datetime.now(), "try to avoid fuse with key press")
-+            #     fgoDevice.device.press('\x08')
-+            # elif offset == 2:
-+            #     # fgoDevice.device.press('Y')
-+            #     fgoDevice.device.press('K')
-+            # elif offset == 3:
-+            #     time.sleep(50)
-+            #     # fgoDevice.device.press('Y')
-+            #     fgoDevice.device.press('J')
-+            # elif 4 <= offset <= 9:
-+            #     time.sleep(5)
-+            #     # One K press every other frame (~0.2+ sec gap) for 6 rounds
-+            #     if (offset - 4) % 2 == 0:
-+            #         detect.save(name="FuseBeforePress_" + str(offset - 3))
-+            #         fgoDevice.device.press('K')
-+            # elif offset == 10:
-+            #     fgoDevice.device = fgoDevice.Device(fgoDevice.device.name)
-+            # elif 11 <= offset <= 16:
-+            #     time.sleep(5)
-+            #     # Second phase: BACK + K + J, one key every other frame
-+            #     step = offset - 11
-+            #     detect.save(name="FuseBeforeHandle_" + str(step))
-+            #     if step % 2 == 0:
-+            #         fgoDevice.device.press('\x08')
-+            #     elif step % 2 == 1:
-+            #         fgoDevice.device.press('Y')
-+            #         fgoDevice.device.press('K')
-+            #     elif step % 2 == 0:
-+            #         fgoDevice.device.press('Y')
-+            #         fgoDevice.device.press('J')
-+            # elif offset > 30:
-+            #     detect.save(name="FuseFinal")
-+            #     traceback.print_stack()
-+            #     raise ScriptStop('Fused')
-+            # # else: offset 17~30 — let detection try to recover naturally
-+
          self.value+=1
      def reset(self,detect=None):
          self.value=0
@@ -570,7 +559,7 @@ index 9e67142..7c64ff0 100644
              self.log[self.logptr]=detect
              self.logptr=(self.logptr+1)%self.logsize
 diff --git a/FGO-py/fgoGui.py b/FGO-py/fgoGui.py
-index 5a044e9..674f1a9 100644
+index 5a044e9..4a2c4a3 100644
 --- a/FGO-py/fgoGui.py
 +++ b/FGO-py/fgoGui.py
 @@ -8,7 +8,7 @@ import fgoDevice
@@ -608,23 +597,22 @@ index 5a044e9..674f1a9 100644
          self.LST_QUEST.setCurrentRow(cur)
      def funcBegin(self):
          self.BTN_MAIN.setEnabled(False)
-@@ -180,6 +181,15 @@ class MainWindow(QMainWindow,Ui_fgoMainWindow):
+@@ -180,8 +181,13 @@ class MainWindow(QMainWindow,Ui_fgoMainWindow):
          self.MENU_CONTROL_MAPKEY.setChecked(False)
      def runMain(self):
          self.operation.battleClass=fgoKernel.Battle
++        self.operation.setQuestConfig(self.config.get("questConfig", "")or None)
 +        self.operation.waitForAp=self.config.get("waitForAp", False)
-+
-+        # I expect the user to manually modify this file to set friend filtering parameters.
-+        self.operation.friendClassScoreAtLeast=self.config.get("friendClassScoreAtLeast", [])
-+        self.operation.friendHouguAtLeast=self.config.get("friendHouguAtLeast", 0)
-+        self.operation.friendAllowedReisous=self.config.get("friendAllowedReisous", [])
-+        self.operation.friendRequireKizunaReisou=self.config.get("friendRequireKizunaReisou", False)
-+        self.operation.friendRequireKizunaReisouToNP=self.config.get("friendRequireKizunaReisouToNP", False)
-+
          self.runFunc(self.operation)
-     def runBattle(self):self.runFunc(fgoKernel.Battle())
+-    def runBattle(self):self.runFunc(fgoKernel.Battle())
++    def runBattle(self):
++        path=self.config.get("questConfig","")or None
++        battleClass=fgoKernel.QuestConfig(path).default.get('battleClass')if path else None
++        self.runFunc(battleClass()if battleClass else fgoKernel.Battle())
      def runClassic(self):
-@@ -239,7 +249,7 @@ class MainWindow(QMainWindow,Ui_fgoMainWindow):
+         if not Teamup(self).exec():return
+         self.operation.battleClass=lambda:fgoKernel.Battle(fgoKernel.ClassicTurn)
+@@ -239,7 +245,7 @@ class MainWindow(QMainWindow,Ui_fgoMainWindow):
          try:exec(s)
          except BaseException as e:logger.exception(e)
      def questQuery(self,index):
@@ -905,7 +893,7 @@ index 234771d..a39059d 100644
          self.ends=ends
          self.listener=DirListener(path)
 diff --git a/FGO-py/fgoKernel.py b/FGO-py/fgoKernel.py
-index edb952e..ecfd014 100644
+index edb952e..7b46f10 100644
 --- a/FGO-py/fgoKernel.py
 +++ b/FGO-py/fgoKernel.py
 @@ -17,10 +17,12 @@
@@ -918,7 +906,7 @@ index edb952e..ecfd014 100644
  __version__=VERSION
  __author__='hgjazhgj'
 -import logging,numpy,pulp,random,re,time,threading
-+import logging,numpy,pulp,random,re,time,threading,datetime
++import json,logging,numpy,os,pulp,random,re,time,threading,datetime
  import fgoDevice
  from itertools import permutations
  from functools import wraps
@@ -940,7 +928,7 @@ index edb952e..ecfd014 100644
  @serialize(mutex)
  def weeklyMission():
      while not Detect(0,1).isMainInterface():pass
-@@ -414,12 +417,259 @@ class Turn:
+@@ -414,15 +417,265 @@ class Turn:
          else:fgoDevice.device.perform('\x08',(700,))
          while not Detect().isTurnBegin():pass
          Detect(.5)
@@ -1198,10 +1186,16 @@ index edb952e..ecfd014 100644
 +    def getServantHP(self): return [Detect.cache.getFieldServantHp(i)if self.servant[i][0]else 999999 for i in range(3)]
 +
 +
++
++# Customized Turns
  class Battle:
      def __init__(self,turnClass=Turn):
          self.turn=0
-@@ -462,10 +712,22 @@ class Battle:
++        self.turnName=turnClass.__name__
+         self.turnProc=turnClass()
+         self.rainbowBox=False
+     def __call__(self):
+@@ -462,10 +715,23 @@ class Battle:
  class Main:
      teamIndex=0
      autoFormation=False
@@ -1221,11 +1215,12 @@ index edb952e..ecfd014 100644
 +        self.friendAllowedReisous = friendAllowedReisous
 +        self.friendRequireKizunaReisou = friendRequireKizunaReisou
 +        self.friendRequireKizunaReisouToNP = friendRequireKizunaReisouToNP
++        self.friendImages = None # names in fgoImage/friend/ to pick from; None means all
 +
      @serialize(mutex)
      def __call__(self,questIndex=0,battleTotal=None):
          self.prepare()
-@@ -473,7 +735,7 @@ class Main:
+@@ -473,7 +739,7 @@ class Main:
              self.battleProc=self.battleClass()
              while True:
                  if Detect(.3,.3).isMainInterface():
@@ -1234,7 +1229,7 @@ index edb952e..ecfd014 100644
                      fgoDevice.device.press('84L'[questIndex])
                      questIndex=0
                      if Detect(1.2).isBattleContinue():fgoDevice.device.press('K')
-@@ -481,19 +743,40 @@ class Main:
+@@ -481,19 +747,42 @@ class Main:
                          fgoDevice.device.press('J')
                          return logger.info('No Storm Pot')
                      if Detect(.7,.3).isApEmpty()and not self.eatApple():return logger.info('Ap Empty')
@@ -1243,7 +1238,8 @@ index edb952e..ecfd014 100644
 +                                      houguAtLeast=self.friendHouguAtLeast,
 +                                      allowedReisous=self.friendAllowedReisous,
 +                                      requireKizunaReisou=self.friendRequireKizunaReisou,
-+                                      requireKizunaReisouToNP=self.friendRequireKizunaReisouToNP)
++                                      requireKizunaReisouToNP=self.friendRequireKizunaReisouToNP,
++                                      images=self.friendImages)
                      while not Detect(0,.3).isBattleFormation():pass
                      if self.teamIndex and Detect.cache.getTeamIndex()+1!=self.teamIndex:fgoDevice.device.perform('\x70\x71\x72\x73\x74\x75\x76\x77\x78\x79\x7A\x7B\x7C\x7D\x7E'[self.teamIndex-1],(1000,))
                      if self.autoFormation:fgoDevice.device.perform('\xDEL ',(1000,1500,1000))
@@ -1274,35 +1270,38 @@ index edb952e..ecfd014 100644
 +                                      houguAtLeast=self.friendHouguAtLeast,
 +                                      allowedReisous=self.friendAllowedReisous,
 +                                      requireKizunaReisou=self.friendRequireKizunaReisou,
-+                                      requireKizunaReisouToNP=self.friendRequireKizunaReisouToNP)
++                                      requireKizunaReisouToNP=self.friendRequireKizunaReisouToNP,
++                                      images=self.friendImages)
                      schedule.sleep(6)
                      break
                  elif Detect.cache.isSkillCastFailed():
-@@ -541,7 +824,7 @@ class Main:
+@@ -541,7 +830,7 @@ class Main:
          logger.warning('Eat Apple')
          return self.appleTotal+1
      @logit(logger,logging.INFO)
 -    def chooseFriend(self):
-+    def chooseFriend(self, classScoresAtLeast=None, houguAtLeast=None, allowedReisous=[], requireKizunaReisou=False, requireKizunaReisouToNP=False):
++    def chooseFriend(self, classScoresAtLeast=None, houguAtLeast=None, allowedReisous=[], requireKizunaReisou=False, requireKizunaReisouToNP=False, images=None):
          refresh=False
          while not Detect(0,.3).isChooseFriend():
              if Detect.cache.isNoFriend():
-@@ -549,12 +832,12 @@ class Main:
+@@ -549,12 +838,14 @@ class Main:
                  fgoDevice.device.perform('\xBAK',(500,1000))
                  refresh=True
                  continue
 -            if Detect.cache.isBattleFormation():return
 +            if Detect.cache.isBattleFormation() or Detect.cache.isTurnBegin():return
          if not friendImg.flush():return fgoDevice.device.press('8')
++        candidates=[(i,friendImg[i])for i in images if i in friendImg]if images else None
++        if images and not candidates:logger.warning(f'None of friend images {images} exists, using all')
          while True:
              timer=time.time()
              while True:
 -                for i in(i for i,j in friendImg.items()if(lambda pos:pos and(fgoDevice.device.touch(pos),True)[-1])(Detect.cache.findFriend(j))):
-+                for i in(i for i,j in friendImg.items() if (lambda pos:pos and(fgoDevice.device.touch(pos),True)[-1])(Detect.cache.findFriend(j, classScoresAtLeast, houguAtLeast, allowedReisous, requireKizunaReisou, requireKizunaReisouToNP))):
++                for i in(i for i,j in(candidates or friendImg.items())if (lambda pos:pos and(fgoDevice.device.touch(pos),True)[-1])(Detect.cache.findFriend(j, classScoresAtLeast, houguAtLeast, allowedReisous, requireKizunaReisou, requireKizunaReisouToNP))):
                      ClassicTurn.friendInfo=(lambda r:(lambda p:[
                          [[-1 if p[i*4+j]=='X'else int(p[i*4+j],16)for j in range(4)]for i in range(3)],
                          [-1 if p[i+12]=='X'else int(p[i+12],16)for i in range(2)],
-@@ -566,7 +849,9 @@ class Main:
+@@ -566,23 +857,81 @@ class Main:
              if refresh:schedule.sleep(max(0,timer+10-time.time()))
              fgoDevice.device.perform('\xBAK',(500,1000))
              refresh=True
@@ -1313,6 +1312,80 @@ index edb952e..ecfd014 100644
                  if Detect.cache.isNoFriend():
                      schedule.sleep(10)
                      fgoDevice.device.perform('\xBAK',(500,1000))
++class QuestConfig:
++    """Per-quest battle settings loaded from a JSON file, e.g.
++    {
++      "default": {"turnClass": "Turn"},
++      "quests": {
++        "1-2-3": {"turnClass": "CustomTurnXxx", "friendImage": "xxx", "friendHouguAtLeast": 5}
++      }
++    }
++    Keys of "quests" are quest IDs joined by '-', same as `main -q`. Missing quests fall back to "default",
++    then to the Operation's own settings. friendImage is a name (without .png) or a list of names in fgoImage/friend/.
++    """
++    friendKeys={'friendClassScoreAtLeast','friendHouguAtLeast','friendAllowedReisous','friendRequireKizunaReisou','friendRequireKizunaReisouToNP'}
++    def __init__(self,path):
++        with open(path,encoding='utf-8')as f:data=json.load(f)
++        self.default=self.parse(data.get('default',{}),'default')
++        self.quests={tuple(int(i)for i in k.split('-')):self.parse(v,k)for k,v in data.get('quests',{}).items()}
++    @staticmethod
++    def findTurnClass(vague,name=""):
++        'Resolve a Turn/CustomTurn subclass in this module by exact name or unique leading letters'
++        turns={n:c for n,c in globals().items()if isinstance(c,type)and issubclass(c,(Turn,CustomTurn))}
++        if vague in turns:return turns[vague]
++        matched=[n for n in turns if n.startswith(vague)]
++        assert vague and len(matched)==1,f'Quest config{" " + name if name else ""}: turnClass {vague!r} {"matches multiple classes: "+", ".join(matched)if matched else "matches none of"} (available: {", ".join(turns)})'
++        return turns[matched[0]]
++    @classmethod
++    def parse(cls,entry,name):
++        unknown=set(entry)-cls.friendKeys-{'turnClass','friendImage'}
++        assert not unknown,f'Quest config {name}: unknown keys {sorted(unknown)}'
++        result={k:entry[k]for k in cls.friendKeys&set(entry)}
++        if'turnClass'in entry:
++            result['battleClass']=lambda turn=cls.findTurnClass(entry['turnClass'],name):Battle(turn)
++        if'friendImage'in entry:
++            images=entry['friendImage']
++            images=[images]if isinstance(images,str)else list(images)
++            images=[i[:-4]if i.endswith('.png')else i for i in images]
++            missing=[i for i in images if i not in friendImg]
++            assert images and not missing,f'Quest config {name}: friend images {missing or "[]"} not found in {friendImg.path}'
++            result['friendImages']=images
++        return result
++    def get(self,quest):return self.quests.get(tuple(quest),self.default)
+ class Operation(list,Main):
+     apLookup={i:j for i,j in zip(missionQuest,missionMat[0])}
+-    def __init__(self,data=(),*args,wait=True,**kwargs):
++    def __init__(self,data=(),*args,wait=True,questConfig=None,**kwargs):
+         list.__init__(self,data)
+         Main.__init__(self,*args,**kwargs)
+         self.wait=wait
++        self.setQuestConfig(questConfig)
++    def setQuestConfig(self,questConfig):
++        'Accept a QuestConfig, a path to its JSON file, or None to disable'
++        self.questConfig=QuestConfig(questConfig)if isinstance(questConfig,(str,os.PathLike))else questConfig
++        self.baseSettings=None
++    def applySettings(self,quest):
++        'Apply the quest-specific settings over the base ones, restoring whatever the previous quest overrode'
++        keys=QuestConfig.friendKeys|{'battleClass','friendImages'}
++        if self.baseSettings is None:self.baseSettings={k:getattr(self,k)for k in keys}
++        settings=self.baseSettings|(self.questConfig.get(quest)if self.questConfig else{})
++        for k,v in settings.items():setattr(self,k,v)
++        if self.questConfig:logger.info(f'Quest {quest} settings: {({k:v for k,v in settings.items()if k!="battleClass"})} battleClass: Battle({settings["battleClass"]().turnName})')
+     def __call__(self):
+         super().prepare()
+-        if not self:super().__call__()
++        self.baseSettings=None
++        if not self:
++            self.applySettings(())
++            super().__call__()
+         while self:
+             quest,times=self[0]
+             del self[0]
+             goto(quest)
++            self.applySettings(quest)
+             if self.wait:schedule.sleep(max(self.apLookup.get(quest,23)*times-Detect.cache.getAp(),0)*300)
+             super().__call__(quest[-1],self.battleCount+times if times else None)
+     def prepare(self):pass
 diff --git a/FGO-py/fgoMainWindow.py b/FGO-py/fgoMainWindow.py
 index 98deec9..3d5949f 100644
 --- a/FGO-py/fgoMainWindow.py
@@ -1403,3 +1476,18 @@ index 1a9ec6f..21232ee 100644
  )}
  def reishift(quest):
      for i in range(1,len(quest)):
+diff --git a/readme.md b/readme.md
+index 187c00d..d113e28 100644
+--- a/readme.md
++++ b/readme.md
+@@ -246,3 +246,10 @@ v9.1及更早版本提供的需要配置的战斗,不建议在以下之外的场
+ # 版本记录 Version Logs
+ 
+ see [versions.md](doc/versions.md)  
++
++## 按关卡配置 Per-quest Config
++
++`main -c quests.json` (CLI) or the `questConfig` item in `fgoConfig.json` (GUI) selects the Turn class and friend servant per quest.
++See `fgoQuestConfig.example.json`: `quests` keys are quest IDs like `main -q`, `turnClass` must be a `Turn`/`CustomTurn` subclass name in `fgoKernel.py`,
++`friendImage` is a name (or list) from `fgoImage/friend/`, plus the usual `friend*` filters. Unlisted quests use `default`, then the command-line settings.
++How many times each quest runs is still set by the GUI quest list or `-q`.
