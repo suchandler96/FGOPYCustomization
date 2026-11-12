@@ -109,7 +109,7 @@ index 7fb5e4d..ed39279 100644
  'closeToTray':False,
  'notifyEnable':False,
 diff --git a/FGO-py/fgoDetect.py b/FGO-py/fgoDetect.py
-index 1f70686..f41b556 100644
+index 1f70686..5af6c74 100644
 --- a/FGO-py/fgoDetect.py
 +++ b/FGO-py/fgoDetect.py
 @@ -3,7 +3,7 @@ from functools import reduce,wraps
@@ -131,7 +131,7 @@ index 1f70686..f41b556 100644
                  return wrap(type(self)(),*args,**kwargs)
              return wrap
          return wrapper
-@@ -55,12 +58,41 @@ class XDetectBase(metaclass=logMeta(logger)):
+@@ -55,12 +58,72 @@ class XDetectBase(metaclass=logMeta(logger)):
      def _loc(self,img,rect=(0,0,1280,720)):return cv2.minMaxLoc(cv2.matchTemplate(self._crop(rect),img[0],cv2.TM_SQDIFF_NORMED,mask=img[1]))
      def _compare(self,img,rect=(0,0,1280,720),threshold=.05):return threshold>self._loc(img,rect)[0]
      def _select(self,img,rect=(0,0,1280,720),threshold=.2):return(lambda x:numpy.argmin(x)if threshold>min(x)else None)([self._loc(i,rect)[0]for i in img])
@@ -151,6 +151,21 @@ index 1f70686..f41b556 100644
 +        _,max_val,_,max_loc=cv2.minMaxLoc(cv2.matchTemplate(gray_crop,gray_tmpl,cv2.TM_CCOEFF_NORMED,mask=img[1]))
 +        print(max_val, max_loc)
 +        return (rect[0]+max_loc[0]+(img[0].shape[1]>>1),rect[1]+max_loc[1]+(img[0].shape[0]>>1)) if max_val>=threshold else None
++    def _textFind(self,img,rect,stages=((0,.6),(3,.8),(5,.7),(7,.6))):
++        # Robust find of a small text template on a textured/gradient background, same scale as the template.
++        # stages go from strict to loose: (blur kernel size, min score). Kernel 0 is the plain grayscale match, which copes with bright patches in the background;
++        # the others first reduce the crop and the template to a blurred "bright text" map, so background texture, brightness and antialiasing drop out,
++        # and a bigger blur tolerates larger changes of the character boundaries.
++        def text(gray,k):return cv2.GaussianBlur((gray>=max(100,.5*numpy.percentile(gray,99))).astype(numpy.float32),(k,k),0)if k else gray.astype(numpy.float32)
++        crop=cv2.cvtColor(self._crop(rect),cv2.COLOR_BGR2GRAY)
++        tmpl=cv2.cvtColor(img[0],cv2.COLOR_BGR2GRAY)
++        if crop.shape[0]<tmpl.shape[0] or crop.shape[1]<tmpl.shape[1]:return None
++        mask=(img[1]>0).astype(numpy.float32)
++        for k,threshold in stages:
++            _,v,_,loc=cv2.minMaxLoc(numpy.nan_to_num(cv2.matchTemplate(text(crop,k),text(tmpl,k),cv2.TM_CCOEFF_NORMED,mask=mask),nan=-1,posinf=-1,neginf=-1))
++            print("_textFind:",round(v,3),"blur",k,"stage threshold",threshold)
++            if v>=threshold:return (rect[0]+loc[0]+(tmpl.shape[1]>>1),rect[1]+loc[1]+(tmpl.shape[0]>>1))
++        return None
 +    def _findMultiMatches(self, img, rect=(0, 0, 1280, 720), threshold=.05):
 +        match_map = cv2.matchTemplate(self._crop(rect),img[0],cv2.TM_SQDIFF_NORMED,mask=img[1])
 +        binary = (match_map < threshold).astype(numpy.uint8)
@@ -164,6 +179,22 @@ index 1f70686..f41b556 100644
 +                                 rect[1] + ys[best_idx] + (img[0].shape[0]>>1)))
 +        return best_matches
 +
++    def _histFind(self,img,rect,threshold=.3,bins=(16,4)):
++        # Slide the template over rect; at each position compare the HSV (H,S) histogram of the window with the template's
++        # (Bhattacharyya distance, 0 = identical), the template alpha weights both. Tolerates texture/scaling noise that breaks pixel matching.
++        crop=self._crop(rect)
++        h,w=img[0].shape[:2]
++        if crop.shape[0]<h or crop.shape[1]<w:return None
++        quant=lambda x:(lambda hsv:(hsv[...,0].astype(int)*bins[0]//180)*bins[1]+hsv[...,1].astype(int)*bins[1]//256)(cv2.cvtColor(x,cv2.COLOR_BGR2HSV))
++        qc,qt=quant(crop),quant(img[0])
++        weight=(img[1]/255).astype(numpy.float32)
++        q=numpy.bincount(qt.ravel(),weights=weight.ravel(),minlength=bins[0]*bins[1]);q/=q.sum()
++        coef=0
++        for b in numpy.flatnonzero(q): # bins absent from the template contribute nothing
++            coef=coef+numpy.sqrt(numpy.clip(cv2.matchTemplate((qc==b).astype(numpy.float32),weight,cv2.TM_CCORR)/weight.sum(),0,1)*q[b])
++        dist,_,_,loc=cv2.minMaxLoc(numpy.sqrt(numpy.clip(1-coef,0,1)))
++        print("_histFind:",round(dist,3))
++        return (rect[0]+loc[0]+(w>>1),rect[1]+loc[1]+(h>>1)) if dist<threshold else None
      def _ocrInt(self,rect):return OCR.EN.ocrInt(self._crop(rect))
      def _ocrText(self,rect):raise NotImplementedError
      def _count(self,img,rect=(0,0,1280,720),threshold=.1):return cv2.connectedComponents((cv2.matchTemplate(self._crop(rect),img[0],cv2.TM_SQDIFF_NORMED,mask=img[1])<threshold).astype(numpy.uint8))[0]-1
@@ -174,7 +205,7 @@ index 1f70686..f41b556 100644
      @coroutine
      def _asyncImageChange(self,rect,threshold=.02):
          img=self._crop(rect)
-@@ -157,7 +189,7 @@ class XDetectBase(metaclass=logMeta(logger)):
+@@ -157,7 +220,7 @@ class XDetectBase(metaclass=logMeta(logger)):
          if self.enemyGird==0:return(0,0)if pos>2 else(lambda count:(lambda c2:(c2,c2)if c2 else(lambda c0,c1:(c1,c0+c1))(count(self.tmpl.CHARGE0),count(self.tmpl.CHARGE1),))(count(self.tmpl.CHARGE2)))(lambda img:self._count(img,(160+250*pos,67,250+250*pos,88)))
          if self.enemyGird==2:return(lambda count:(lambda c2:(c2,c2)if c2 else(lambda c0,c1:(c1,c0+c1))(count(self.tmpl.CHARGE0_SMALL),count(self.tmpl.CHARGE1_SMALL),))(count(self.tmpl.CHARGE2_SMALL)))(lambda img:self._count(img,(231+pos%3*200-pos//3*100,49+pos//3*99,311+pos%3*200-pos//3*100,72+pos//3*99)))
      def getFieldServant(self,pos):return(lambda img,cls:min((numpy.min(cv2.matchTemplate(img,i[0],cv2.TM_SQDIFF_NORMED,mask=i[1])),no)for no,(_,portrait,_)in servantImg.items()if servantData[no][0]==cls[0]for i in portrait)[1]if cls else 0)(self._crop((120+318*pos,421,207+318*pos,490)),self.getFieldServantClassRank(pos))
@@ -183,7 +214,7 @@ index 1f70686..f41b556 100644
      def getFieldServantHp(self,pos):return self._ocrInt((200+317*pos,620,293+317*pos,644))
      def getFieldServantNp(self,pos):return self._ocrInt((220+317*pos,655,271+317*pos,680))
      def getMaterial(self):return(lambda x:{materialImg[i][0]:x.count(i)for i in set(x)-{None}})([self._select(((i[1],None)for i in materialImg),(176+i%7*137,110+i//7*142,253+i%7*137,187+i//7*142),.02)for i in range(1,21)])
-@@ -168,6 +200,57 @@ class XDetectBase(metaclass=logMeta(logger)):
+@@ -168,6 +231,57 @@ class XDetectBase(metaclass=logMeta(logger)):
      @retryOnError()
      @validate()
      def getStageTotal(self):return self._ocrInt((912,13,932,38))
@@ -241,7 +272,7 @@ index 1f70686..f41b556 100644
      def getSummonHistory(self):XDetectBase._summonHistory=self._stack(XDetectBase._summonHistory,cv2.threshold(cv2.cvtColor(self._crop((147,157,1105,547)),cv2.COLOR_BGR2GRAY),128,255,cv2.THRESH_BINARY)[1],80)
      @classmethod
      def getSummonHistoryCount(cls):return cls.__new__(cls).inject(XDetectBase._summonHistory)._count((cls.tmpl.SUMMONHISTORY[0][...,0],cls.tmpl.SUMMONHISTORY[1]),(28,0,60,XDetectBase._summonHistory.shape[0]),.7)
-@@ -177,7 +260,150 @@ class XDetectBase(metaclass=logMeta(logger)):
+@@ -177,7 +291,159 @@ class XDetectBase(metaclass=logMeta(logger)):
      def getTeamServantClassRank(self):return[(lambda x:x if x is None else classImg[0][x])(self._select(CLASS[100],(30+200*i+15*(i>2),133,115+200*i+15*(i>2),203)))for i in range(6)]
      def getWeeklyMission(self):XDetectBase._weeklyMission=self._stack(XDetectBase._weeklyMission,self._crop((603,250,1092,710)),157)
      def findChapter(self,chapter):return self._find((chapterImg[chapter],None),(640,90,1230,600))
@@ -293,7 +324,12 @@ index 1f70686..f41b556 100644
 +                match_lvl_region = (420, servant_y_range[0] + 120, 784, servant_y_range[0] + 168)   # depends on whether a message exists...
 +                # print("match_lvl_region =", match_lvl_region)
 +                houogu_keyword_pos = self._gray_find(self.tmpl.FINDFRIENDHOUGULEVELKEYWORD, match_lvl_region, .6)
-+                # print("houogu_keyword_pos =", houogu_keyword_pos)
++                # houogu_keyword_pos = self._textFind(self.tmpl.FINDFRIENDHOUGULEVELKEYWORD, match_lvl_region)
++                print("houogu_keyword_pos =", houogu_keyword_pos)
++                if not houogu_keyword_pos:
++                    print("match_lvl_region =", match_lvl_region)
++                    print("saved crop:", self.save(f"HouguLvlMissed_y{servant_y_range[0]}", match_lvl_region))
++                    continue
 +                hougu_lvl_left = houogu_keyword_pos[0] + (self.tmpl.FINDFRIENDHOUGULEVELKEYWORD[0].shape[1] >> 1)
 +                # print("hougu_lvl_val_match_region =", (hougu_lvl_left, match_lvl_region[1], hougu_lvl_left+20, match_lvl_region[3]))
 +                hougu_lvl = self._ocrInt((hougu_lvl_left, match_lvl_region[1], hougu_lvl_left+20, match_lvl_region[3]))
@@ -310,8 +346,12 @@ index 1f70686..f41b556 100644
 +
 +                    matched_num = 0
 +                    reisou_region = (218, servant_y_range[1] - 149, 379, servant_y_range[1] - 10)
++                    # 3 boxes are stacked in reisou_region, the middle one is never an allowed reisou, so a plain upper/lower split is enough
++                    mid = (reisou_region[1] + reisou_region[3]) // 2
++                    upper = (*reisou_region[:3], mid)
++                    lower = (reisou_region[0], mid, *reisou_region[2:])
 +                    for reisou in allowedReisous:
-+                        if self._find(reisou, reisou_region, .06):
++                        if any(self._histFind(reisou, region) for region in (upper, lower)):
 +                            matched_num += 1
 +                    if matched_num < 2:
 +                        print("reisou does not match")
@@ -393,7 +433,7 @@ index 1f70686..f41b556 100644
      def findMail(self,img):return self._find(img,(73,166,920,720),.017)
      def findMapCamera(self,chapter):return numpy.array(cv2.minMaxLoc(cv2.matchTemplate(mapImg[chapter],cv2.resize(self._crop((200,200,1080,520)),(0,0),fx=.3,fy=.3,interpolation=cv2.INTER_CUBIC),cv2.TM_SQDIFF_NORMED))[2])/.3+(440,160)
      @classmethod
-@@ -193,6 +419,7 @@ class XDetectBase(metaclass=logMeta(logger)):
+@@ -193,6 +459,7 @@ class XDetectBase(metaclass=logMeta(logger)):
      def getTeamServantHouguLv(self):raise NotImplementedError
      def getTeamServantRank(self):raise NotImplementedError
      def getTeamServantSkillLv(self):raise NotImplementedError
@@ -401,7 +441,7 @@ index 1f70686..f41b556 100644
  class XDetectCN(XDetectBase):
      tmpl=IMG_CN
      ocr=OCR.ZHS
-@@ -206,6 +433,19 @@ class XDetectCN(XDetectBase):
+@@ -206,6 +473,19 @@ class XDetectCN(XDetectBase):
                  mission=''
              else:mission+=i
          return result
@@ -421,7 +461,7 @@ index 1f70686..f41b556 100644
  class XDetectJP(XDetectBase):
      tmpl=IMG_JP
      ocr=OCR.JA
-@@ -222,7 +462,7 @@ class DetectBase(XDetectBase):
+@@ -222,7 +502,7 @@ class DetectBase(XDetectBase):
      def __init__(self,anteLatency=.1,postLatency=0):
          schedule.sleep(anteLatency)
          super().__init__()
@@ -431,7 +471,7 @@ index 1f70686..f41b556 100644
      def _compare(self,*args,**kwargs):return super()._compare(*args,**kwargs)and fuse.reset(self)
      def _find(self,*args,**kwargs):
 diff --git a/FGO-py/fgoDevice.py b/FGO-py/fgoDevice.py
-index 92541a2..1a19553 100644
+index 92541a2..f70ca05 100644
 --- a/FGO-py/fgoDevice.py
 +++ b/FGO-py/fgoDevice.py
 @@ -1,5 +1,6 @@
@@ -474,11 +514,11 @@ index 92541a2..1a19553 100644
 +    def returnHomeAndClearFGOBackgroundAndRestart(self):
 +        self.I.adb.shell("input keyevent 3")
 +        import time
-+        time.sleep(5)
++        time.sleep(15)
 +        self.I.adb.shell("am force-stop " + self.I.package)
-+        time.sleep(5)
++        time.sleep(15)
 +        self.I.adb.shell("am start -n " + self.I.package + "/.EmptyClass")
-+        time.sleep(5)
++        time.sleep(15)
 +    def waitLogin(self,timeout=120,loginDir='fgoImage/login/',flagDir='fgoImage/login/flag/'):
 +        # Taps through the login screens after a restart until a flag image (home screen marker) shows up.
 +        # XDetect (not Detect) is used on purpose: Detect feeds the fuse, which would re-enter the restart logic.
@@ -893,7 +933,7 @@ index 234771d..a39059d 100644
          self.ends=ends
          self.listener=DirListener(path)
 diff --git a/FGO-py/fgoKernel.py b/FGO-py/fgoKernel.py
-index edb952e..7b46f10 100644
+index edb952e..237c71a 100644
 --- a/FGO-py/fgoKernel.py
 +++ b/FGO-py/fgoKernel.py
 @@ -17,10 +17,12 @@
@@ -928,7 +968,7 @@ index edb952e..7b46f10 100644
  @serialize(mutex)
  def weeklyMission():
      while not Detect(0,1).isMainInterface():pass
-@@ -414,15 +417,265 @@ class Turn:
+@@ -414,15 +417,263 @@ class Turn:
          else:fgoDevice.device.perform('\x08',(700,))
          while not Detect().isTurnBegin():pass
          Detect(.5)
@@ -1186,8 +1226,6 @@ index edb952e..7b46f10 100644
 +    def getServantHP(self): return [Detect.cache.getFieldServantHp(i)if self.servant[i][0]else 999999 for i in range(3)]
 +
 +
-+
-+# Customized Turns
  class Battle:
      def __init__(self,turnClass=Turn):
          self.turn=0
@@ -1195,7 +1233,7 @@ index edb952e..7b46f10 100644
          self.turnProc=turnClass()
          self.rainbowBox=False
      def __call__(self):
-@@ -462,10 +715,23 @@ class Battle:
+@@ -462,10 +713,23 @@ class Battle:
  class Main:
      teamIndex=0
      autoFormation=False
@@ -1220,7 +1258,7 @@ index edb952e..7b46f10 100644
      @serialize(mutex)
      def __call__(self,questIndex=0,battleTotal=None):
          self.prepare()
-@@ -473,7 +739,7 @@ class Main:
+@@ -473,7 +737,7 @@ class Main:
              self.battleProc=self.battleClass()
              while True:
                  if Detect(.3,.3).isMainInterface():
@@ -1229,7 +1267,7 @@ index edb952e..7b46f10 100644
                      fgoDevice.device.press('84L'[questIndex])
                      questIndex=0
                      if Detect(1.2).isBattleContinue():fgoDevice.device.press('K')
-@@ -481,19 +747,42 @@ class Main:
+@@ -481,19 +745,42 @@ class Main:
                          fgoDevice.device.press('J')
                          return logger.info('No Storm Pot')
                      if Detect(.7,.3).isApEmpty()and not self.eatApple():return logger.info('Ap Empty')
@@ -1275,7 +1313,7 @@ index edb952e..7b46f10 100644
                      schedule.sleep(6)
                      break
                  elif Detect.cache.isSkillCastFailed():
-@@ -541,7 +830,7 @@ class Main:
+@@ -541,7 +828,7 @@ class Main:
          logger.warning('Eat Apple')
          return self.appleTotal+1
      @logit(logger,logging.INFO)
@@ -1284,7 +1322,7 @@ index edb952e..7b46f10 100644
          refresh=False
          while not Detect(0,.3).isChooseFriend():
              if Detect.cache.isNoFriend():
-@@ -549,12 +838,14 @@ class Main:
+@@ -549,12 +836,14 @@ class Main:
                  fgoDevice.device.perform('\xBAK',(500,1000))
                  refresh=True
                  continue
@@ -1301,7 +1339,7 @@ index edb952e..7b46f10 100644
                      ClassicTurn.friendInfo=(lambda r:(lambda p:[
                          [[-1 if p[i*4+j]=='X'else int(p[i*4+j],16)for j in range(4)]for i in range(3)],
                          [-1 if p[i+12]=='X'else int(p[i+12],16)for i in range(2)],
-@@ -566,23 +857,81 @@ class Main:
+@@ -566,24 +855,82 @@ class Main:
              if refresh:schedule.sleep(max(0,timer+10-time.time()))
              fgoDevice.device.perform('\xBAK',(500,1000))
              refresh=True
@@ -1382,10 +1420,12 @@ index edb952e..7b46f10 100644
              quest,times=self[0]
              del self[0]
              goto(quest)
+-            if self.wait:schedule.sleep(max(self.apLookup.get(quest,23)*times-Detect.cache.getAp(),0)*300)
 +            self.applySettings(quest)
-             if self.wait:schedule.sleep(max(self.apLookup.get(quest,23)*times-Detect.cache.getAp(),0)*300)
++            # if self.wait:schedule.sleep(max(self.apLookup.get(quest,23)*times-Detect.cache.getAp(),0)*300)
              super().__call__(quest[-1],self.battleCount+times if times else None)
      def prepare(self):pass
+     def getAp(self):return sum(self.apLookup.get(i,23)*j for i,j in self)
 diff --git a/FGO-py/fgoMainWindow.py b/FGO-py/fgoMainWindow.py
 index 98deec9..3d5949f 100644
 --- a/FGO-py/fgoMainWindow.py
@@ -1434,7 +1474,7 @@ index f3a1d94..ceffc5f 100644
  questImg[4]=questImg[3]
 +grandImg={tuple(int(i)for i in i[:-4].split('-')):cv2.imread(f'fgoImage/map/grandBattle/{i}')for i in os.listdir('fgoImage/map/grandBattle')}
 diff --git a/FGO-py/fgoReishift.py b/FGO-py/fgoReishift.py
-index 1a9ec6f..21232ee 100644
+index 1a9ec6f..cafdf9e 100644
 --- a/FGO-py/fgoReishift.py
 +++ b/FGO-py/fgoReishift.py
 @@ -49,6 +49,22 @@ class OrdaelCall:
@@ -1456,7 +1496,7 @@ index 1a9ec6f..21232ee 100644
 +            fgoDevice.device.swipe((1000,600),(1000,200))   # swipe to the bottom
 +            schedule.sleep(.7)
 +        # grand battles have quest[0] == 99
-+        while not Detect(.5).isQuestFreeFirst(99):fgoDevice.device.swipe((1000,300),(1000,400))
++        # while not Detect(.5).isQuestFreeFirst(99):fgoDevice.device.swipe((1000,300),(1000,400))
  
  place={i.name:i for i in(
  List((0,)),List((1,)),List((2,)),List((4,)),List((5,)),
