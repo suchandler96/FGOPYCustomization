@@ -109,7 +109,7 @@ index 7fb5e4d..ed39279 100644
  'closeToTray':False,
  'notifyEnable':False,
 diff --git a/FGO-py/fgoDetect.py b/FGO-py/fgoDetect.py
-index 1f70686..5af6c74 100644
+index 1f70686..775a4a0 100644
 --- a/FGO-py/fgoDetect.py
 +++ b/FGO-py/fgoDetect.py
 @@ -3,7 +3,7 @@ from functools import reduce,wraps
@@ -151,7 +151,7 @@ index 1f70686..5af6c74 100644
 +        _,max_val,_,max_loc=cv2.minMaxLoc(cv2.matchTemplate(gray_crop,gray_tmpl,cv2.TM_CCOEFF_NORMED,mask=img[1]))
 +        print(max_val, max_loc)
 +        return (rect[0]+max_loc[0]+(img[0].shape[1]>>1),rect[1]+max_loc[1]+(img[0].shape[0]>>1)) if max_val>=threshold else None
-+    def _textFind(self,img,rect,stages=((0,.6),(3,.8),(5,.7),(7,.6))):
++    def _textFind(self,img,rect,stages=((0,.5),(3,.8),(5,.7),(7,.6))):
 +        # Robust find of a small text template on a textured/gradient background, same scale as the template.
 +        # stages go from strict to loose: (blur kernel size, min score). Kernel 0 is the plain grayscale match, which copes with bright patches in the background;
 +        # the others first reduce the crop and the template to a blurred "bright text" map, so background texture, brightness and antialiasing drop out,
@@ -272,13 +272,13 @@ index 1f70686..5af6c74 100644
      def getSummonHistory(self):XDetectBase._summonHistory=self._stack(XDetectBase._summonHistory,cv2.threshold(cv2.cvtColor(self._crop((147,157,1105,547)),cv2.COLOR_BGR2GRAY),128,255,cv2.THRESH_BINARY)[1],80)
      @classmethod
      def getSummonHistoryCount(cls):return cls.__new__(cls).inject(XDetectBase._summonHistory)._count((cls.tmpl.SUMMONHISTORY[0][...,0],cls.tmpl.SUMMONHISTORY[1]),(28,0,60,XDetectBase._summonHistory.shape[0]),.7)
-@@ -177,7 +291,159 @@ class XDetectBase(metaclass=logMeta(logger)):
+@@ -177,7 +291,151 @@ class XDetectBase(metaclass=logMeta(logger)):
      def getTeamServantClassRank(self):return[(lambda x:x if x is None else classImg[0][x])(self._select(CLASS[100],(30+200*i+15*(i>2),133,115+200*i+15*(i>2),203)))for i in range(6)]
      def getWeeklyMission(self):XDetectBase._weeklyMission=self._stack(XDetectBase._weeklyMission,self._crop((603,250,1092,710)),157)
      def findChapter(self,chapter):return self._find((chapterImg[chapter],None),(640,90,1230,600))
 -    def findFriend(self,img):return self._find(img,(13,166,1233,720),.04)
 +    def findGrandBattle(self,grandbattle):return self._find((grandImg[grandbattle],None),(50,320,140,450))
-+    def findFriend(self, img, classScoresAtLeast=None, houguAtLeast=None, allowedReisous=[], requireKizunaReisou=False, requireKizunaReisouToNP=False):
++    def findFriend(self, img, isGrandBattle=None, classScoresAtLeast=None, houguAtLeast=None, allowedReisous=[], requireKizunaReisou=False, requireKizunaReisouToNP=False):
 +        # an example of allowed_reisous: allowed_reisous=["KIZUNA10", "KIZUNA15", "KIZUNAORDEREDFEMALE", "KIZUNAORDEREDKIND", "KIZUNACLOTHES"]
 +        if not classScoresAtLeast and not houguAtLeast and not allowedReisous and not requireKizunaReisou and not requireKizunaReisouToNP:
 +            # empty containers are also falsy
@@ -288,15 +288,7 @@ index 1f70686..5af6c74 100644
 +        # raw_pos = self._find(img,(13,166,1233,720),.04)
 +        # if raw_pos is None:
 +        #     return None
-+        is_grand_battle = None
-+        if classScoresAtLeast:
-+            if type(classScoresAtLeast) != int and len(classScoresAtLeast) == 1:
-+                classScoresAtLeast = classScoresAtLeast[0]    # preprocessing
-+            if is_grand_battle := (isinstance(classScoresAtLeast, list) or isinstance(classScoresAtLeast, tuple)):
-+                assert len(classScoresAtLeast) == 2 and type(classScoresAtLeast[0]) == int and type(classScoresAtLeast[1]) == int, \
-+                    f"provided classScoreAtLeast has an incorrect format: should be a tuple or list of 2 integers, got {classScoresAtLeast}"
-+            else:
-+                assert False
++        # isGrandBattle and classScoresAtLeast are already resolved and standardized by the caller (see fgoKernel Main.__init__ and Operation.applySettings)
 +
 +        # rasterize the screenshot with each friend servant's right-side bar, x range: 1190-1210
 +        best_coords = self._findMultiMatches(self.tmpl.FINDFRIENDRIGHTBAR, (1190, 160, 1210, 720), .05)
@@ -311,7 +303,7 @@ index 1f70686..5af6c74 100644
 +            # print("potential servant match:")
 +
 +            # # match olgamarie Name
-+            # match_name_region = (473 if is_grand_battle else 331, servant_y_range[0] + 85, 750, servant_y_range[0] + 130)
++            # match_name_region = (473 if isGrandBattle else 331, servant_y_range[0] + 85, 750, servant_y_range[0] + 130)
 +            # olgamarie_name_pos = self._gray_find(self.tmpl.OLGAMARIE12NAME, match_name_region, .6)
 +            # print("matching servant name:")
 +            # if not olgamarie_name_pos:
@@ -321,10 +313,10 @@ index 1f70686..5af6c74 100644
 +            #     print("servant name match.")
 +
 +            if houguAtLeast:
-+                match_lvl_region = (420, servant_y_range[0] + 120, 784, servant_y_range[0] + 168)   # depends on whether a message exists...
++                match_lvl_region = (420, servant_y_range[0] + 120, 811, servant_y_range[0] + 168)   # depends on whether a message exists...
 +                # print("match_lvl_region =", match_lvl_region)
-+                houogu_keyword_pos = self._gray_find(self.tmpl.FINDFRIENDHOUGULEVELKEYWORD, match_lvl_region, .6)
-+                # houogu_keyword_pos = self._textFind(self.tmpl.FINDFRIENDHOUGULEVELKEYWORD, match_lvl_region)
++                # houogu_keyword_pos = self._gray_find(self.tmpl.FINDFRIENDHOUGULEVELKEYWORD, match_lvl_region, .6)
++                houogu_keyword_pos = self._textFind(self.tmpl.FINDFRIENDHOUGULEVELKEYWORD, match_lvl_region)
 +                print("houogu_keyword_pos =", houogu_keyword_pos)
 +                if not houogu_keyword_pos:
 +                    print("match_lvl_region =", match_lvl_region)
@@ -340,7 +332,7 @@ index 1f70686..5af6c74 100644
 +            if len(allowedReisous) > 0:
 +                if type(allowedReisous[0]) == str:
 +                    allowedReisous = [eval("self.tmpl." + reisou.upper(), {}, {"self": self}) for reisou in allowedReisous]
-+                if is_grand_battle:
++                if isGrandBattle:
 +                    # servant_y_range bottom: 376; reisou box boundaries: 366, 320, 274, 227
 +                    # reisou box x range: 218 -> 379
 +
@@ -357,7 +349,7 @@ index 1f70686..5af6c74 100644
 +                        print("reisou does not match")
 +                        continue
 +
-+            if is_grand_battle:
++            if isGrandBattle:
 +                # servant_y_range bottom: 576
 +                # kizuna_reisou converted to NP: (220, 475, 246, 500)
 +                kizuna_reisou_symbol_region = (220, servant_y_range[1] - 102, 246, servant_y_range[1] - 76)
@@ -375,7 +367,7 @@ index 1f70686..5af6c74 100644
 +                print("match_digit_y_range =", match_digit_y_range)
 +
 +                slash_border = None
-+                if is_grand_battle:
++                if isGrandBattle:
 +                    match_slash_range = (1032, match_digit_y_range[0], 1060, match_digit_y_range[1])
 +                    match_tmpls = [(self.tmpl.FINDFRIENDCLASSSCORESLASHPLUSFAT, .65),
 +                                   (self.tmpl.FINDFRIENDCLASSSCORESLASHPLUSTHIN, .65)]
@@ -433,15 +425,17 @@ index 1f70686..5af6c74 100644
      def findMail(self,img):return self._find(img,(73,166,920,720),.017)
      def findMapCamera(self,chapter):return numpy.array(cv2.minMaxLoc(cv2.matchTemplate(mapImg[chapter],cv2.resize(self._crop((200,200,1080,520)),(0,0),fx=.3,fy=.3,interpolation=cv2.INTER_CUBIC),cv2.TM_SQDIFF_NORMED))[2])/.3+(440,160)
      @classmethod
-@@ -193,6 +459,7 @@ class XDetectBase(metaclass=logMeta(logger)):
+@@ -193,6 +451,9 @@ class XDetectBase(metaclass=logMeta(logger)):
      def getTeamServantHouguLv(self):raise NotImplementedError
      def getTeamServantRank(self):raise NotImplementedError
      def getTeamServantSkillLv(self):raise NotImplementedError
 +    def findLogin(self,img,threshold=.5):return self._find(img,(0,0,1280,720),threshold)
++    # Right-hand button ("Retry"/"Enter") of the title-screen dialogs (connection lost / resume battle). The text is masked out, so one template fits both.
++    def findLoginDialog(self):return self._find(self.tmpl.BATTLECONTINUE,(665,478,1014,636),.05)
  class XDetectCN(XDetectBase):
      tmpl=IMG_CN
      ocr=OCR.ZHS
-@@ -206,6 +473,19 @@ class XDetectCN(XDetectBase):
+@@ -206,6 +467,19 @@ class XDetectCN(XDetectBase):
                  mission=''
              else:mission+=i
          return result
@@ -461,7 +455,7 @@ index 1f70686..5af6c74 100644
  class XDetectJP(XDetectBase):
      tmpl=IMG_JP
      ocr=OCR.JA
-@@ -222,7 +502,7 @@ class DetectBase(XDetectBase):
+@@ -222,7 +496,7 @@ class DetectBase(XDetectBase):
      def __init__(self,anteLatency=.1,postLatency=0):
          schedule.sleep(anteLatency)
          super().__init__()
@@ -471,7 +465,7 @@ index 1f70686..5af6c74 100644
      def _compare(self,*args,**kwargs):return super()._compare(*args,**kwargs)and fuse.reset(self)
      def _find(self,*args,**kwargs):
 diff --git a/FGO-py/fgoDevice.py b/FGO-py/fgoDevice.py
-index 92541a2..f70ca05 100644
+index 92541a2..83f40b3 100644
 --- a/FGO-py/fgoDevice.py
 +++ b/FGO-py/fgoDevice.py
 @@ -1,5 +1,6 @@
@@ -482,7 +476,7 @@ index 92541a2..f70ca05 100644
  from fgoLogging import getLogger
  from fgoSchedule import schedule
  logger=getLogger('Device')
-@@ -47,6 +48,62 @@ class Device:
+@@ -47,6 +48,73 @@ class Device:
      def available(self):return self.I.available and(self.I is self.O or self.O.available)
      def perform(self,pos,wait):[(self.press(i),schedule.sleep(j*.001))for i,j in zip(pos,wait)]
      def touch(self,pos,wait=0):(self.I.touch(pos),schedule.sleep(wait*.001))
@@ -512,6 +506,7 @@ index 92541a2..f70ca05 100644
 +        subprocess.Popen([path,*args])
 +        schedule.sleep(float(os.environ.get('FGO_EMULATOR_WAIT',20)))
 +    def returnHomeAndClearFGOBackgroundAndRestart(self):
++        print("call returnHomeAndClearFGOBackgroundAndRestart()")
 +        self.I.adb.shell("input keyevent 3")
 +        import time
 +        time.sleep(15)
@@ -529,10 +524,20 @@ index 92541a2..f70ca05 100644
 +        login,flag=ImageListener(loginDir),ImageListener(flagDir)
 +        end=time.time()+timeout
 +        while time.time()<end:
-+            schedule.sleep(.5)
++            schedule.sleep(5)
 +            detect=XDetect()
 +            if any(detect.findLogin(i,.05)for i in flag.values()):
 +                logger.info('Login finished')
++                return True
++            # Title-screen dialogs ("connection lost, retry?" / "battle in progress, enter?") may pop up repeatedly; only the right-hand button is ever pressed.
++            if pos:=detect.findLoginDialog():
++                logger.info(f'Login dialog at {pos}')
++                self.touch(pos)
++                end=time.time()+timeout
++                continue
++            # A restart in the middle of a battle resumes straight into the turn UI instead of the home screen.
++            if detect.isTurnBegin():
++                logger.info('Login finished (battle resumed)')
 +                return True
 +            for name,i in login.items():
 +                if pos:=detect.findLogin(i,.1):
@@ -546,10 +551,10 @@ index 92541a2..f70ca05 100644
      def __getattr__(self,attr):return getattr(self.I,attr,getattr(self.O,attr))
  
 diff --git a/FGO-py/fgoFuse.py b/FGO-py/fgoFuse.py
-index 9e67142..3c9736e 100644
+index 9e67142..c0a52ba 100644
 --- a/FGO-py/fgoFuse.py
 +++ b/FGO-py/fgoFuse.py
-@@ -1,22 +1,44 @@
+@@ -1,22 +1,36 @@
 +import time
 +
  from fgoLogging import getLogger
@@ -569,7 +574,6 @@ index 9e67142..3c9736e 100644
          self.logptr=0
 -    def increase(self):
 +        self.rebooted=False
-+        self.reenter_pressed=False
 +    def increase(self, detect=None):
          logger.debug(f'{self.value}')
          if self.value>self.max:
@@ -580,12 +584,6 @@ index 9e67142..3c9736e 100644
 +                fgoDevice.device = fgoDevice.Device(fgoDevice.device.name)
 +                fgoDevice.device.waitLogin()
 +                self.rebooted=True
-+            else:
-+                if not self.reenter_pressed:
-+                    if detect.isBattleContinue():
-+                        self.reenter_pressed=True
-+                    fgoDevice.device.press('K')
-+                time.sleep(5)
 +            if self.value > self.max + 720:
 +                traceback.print_stack()
 +                raise ScriptStop('Fused')
@@ -594,7 +592,6 @@ index 9e67142..3c9736e 100644
      def reset(self,detect=None):
          self.value=0
 +        self.rebooted=False
-+        self.reenter_pressed=False
          if detect is not None and detect is not self.log[(self.logptr-1)%self.logsize]:
              self.log[self.logptr]=detect
              self.logptr=(self.logptr+1)%self.logsize
@@ -933,7 +930,7 @@ index 234771d..a39059d 100644
          self.ends=ends
          self.listener=DirListener(path)
 diff --git a/FGO-py/fgoKernel.py b/FGO-py/fgoKernel.py
-index edb952e..237c71a 100644
+index edb952e..e70ea46 100644
 --- a/FGO-py/fgoKernel.py
 +++ b/FGO-py/fgoKernel.py
 @@ -17,10 +17,12 @@
@@ -968,7 +965,7 @@ index edb952e..237c71a 100644
  @serialize(mutex)
  def weeklyMission():
      while not Detect(0,1).isMainInterface():pass
-@@ -414,15 +417,263 @@ class Turn:
+@@ -414,15 +417,265 @@ class Turn:
          else:fgoDevice.device.perform('\x08',(700,))
          while not Detect().isTurnBegin():pass
          Detect(.5)
@@ -1226,6 +1223,8 @@ index edb952e..237c71a 100644
 +    def getServantHP(self): return [Detect.cache.getFieldServantHp(i)if self.servant[i][0]else 999999 for i in range(3)]
 +
 +
++
++# Customized Turns
  class Battle:
      def __init__(self,turnClass=Turn):
          self.turn=0
@@ -1233,11 +1232,12 @@ index edb952e..237c71a 100644
          self.turnProc=turnClass()
          self.rainbowBox=False
      def __call__(self):
-@@ -462,10 +713,23 @@ class Battle:
+@@ -462,10 +715,44 @@ class Battle:
  class Main:
      teamIndex=0
      autoFormation=False
 -    def __init__(self,appleTotal=0,appleKind=0,battleClass=Battle):
++    isGrandBattle=None # True/False when the quest ID is known (quest[0]==99 means grand battle), None when unknown. Set per quest by Operation
 +    def __init__(self, appleTotal=0, appleKind=0, battleClass=Battle, waitForAp=True, battleTotal=0,
 +                 friendClassScoreAtLeast=None, friendHouguAtLeast=None, friendAllowedReisous=[],
 +                 friendRequireKizunaReisou=False, friendRequireKizunaReisouToNP=False):
@@ -1246,6 +1246,8 @@ index edb952e..237c71a 100644
          self.battleClass=battleClass
 +        self.waitForAp=waitForAp
 +        self.battleTotal=battleTotal
++        self.isGrandBattle = None   # True/False if the caller knows the quest type;
++                                    # None means unknown, so infer it from the format of friendClassScoreAtLeast
 +
 +        # conditions to filter friend servants
 +        self.friendClassScoreAtLeast = friendClassScoreAtLeast
@@ -1254,11 +1256,29 @@ index edb952e..237c71a 100644
 +        self.friendRequireKizunaReisou = friendRequireKizunaReisou
 +        self.friendRequireKizunaReisouToNP = friendRequireKizunaReisouToNP
 +        self.friendImages = None # names in fgoImage/friend/ to pick from; None means all
++        self.resolveIsGrandBattleAndFriendClassScore()
++
++    def resolveIsGrandBattleAndFriendClassScore(self):
++        '''Standardize self.friendClassScoreAtLeast and settle self.isGrandBattle.
++        If self.isGrandBattle is None (quest ID unknown), deduce it from the format of the
++        class score: a pair of ints for grand battles, a single int otherwise.
++        If it is True/False, only validate the score against it.'''
++        score=self.friendClassScoreAtLeast
++        if score:
++            if not isinstance(score,int) and len(score)==1:score=score[0]    # preprocessing
++            if self.isGrandBattle is None:self.isGrandBattle=isinstance(score,(list,tuple))
++            if self.isGrandBattle:
++                assert isinstance(score,(list,tuple)) and len(score)==2 and all(type(i)==int for i in score),\
++                    f'friendClassScoreAtLeast should be a tuple or list of 2 integers for a grand battle, got {score}'
++            else:
++                assert isinstance(score,int),\
++                    f'friendClassScoreAtLeast should be an integer for a non-grand battle, got {score}'
++            self.friendClassScoreAtLeast=score
 +
      @serialize(mutex)
      def __call__(self,questIndex=0,battleTotal=None):
          self.prepare()
-@@ -473,7 +737,7 @@ class Main:
+@@ -473,7 +760,7 @@ class Main:
              self.battleProc=self.battleClass()
              while True:
                  if Detect(.3,.3).isMainInterface():
@@ -1267,12 +1287,13 @@ index edb952e..237c71a 100644
                      fgoDevice.device.press('84L'[questIndex])
                      questIndex=0
                      if Detect(1.2).isBattleContinue():fgoDevice.device.press('K')
-@@ -481,19 +745,42 @@ class Main:
+@@ -481,19 +768,44 @@ class Main:
                          fgoDevice.device.press('J')
                          return logger.info('No Storm Pot')
                      if Detect(.7,.3).isApEmpty()and not self.eatApple():return logger.info('Ap Empty')
 -                    self.chooseFriend()
-+                    self.chooseFriend(classScoresAtLeast=self.friendClassScoreAtLeast,
++                    self.chooseFriend(isGrandBattle=self.isGrandBattle,
++                                      classScoresAtLeast=self.friendClassScoreAtLeast,
 +                                      houguAtLeast=self.friendHouguAtLeast,
 +                                      allowedReisous=self.friendAllowedReisous,
 +                                      requireKizunaReisou=self.friendRequireKizunaReisou,
@@ -1304,7 +1325,8 @@ index edb952e..237c71a 100644
                      fgoDevice.device.press('K')
                      if Detect(.7,.3).isApEmpty()and not self.eatApple():return logger.info('Ap Empty')
 -                    self.chooseFriend()
-+                    self.chooseFriend(classScoresAtLeast=self.friendClassScoreAtLeast,
++                    self.chooseFriend(isGrandBattle=self.isGrandBattle,
++                                      classScoresAtLeast=self.friendClassScoreAtLeast,
 +                                      houguAtLeast=self.friendHouguAtLeast,
 +                                      allowedReisous=self.friendAllowedReisous,
 +                                      requireKizunaReisou=self.friendRequireKizunaReisou,
@@ -1313,16 +1335,16 @@ index edb952e..237c71a 100644
                      schedule.sleep(6)
                      break
                  elif Detect.cache.isSkillCastFailed():
-@@ -541,7 +828,7 @@ class Main:
+@@ -541,7 +853,7 @@ class Main:
          logger.warning('Eat Apple')
          return self.appleTotal+1
      @logit(logger,logging.INFO)
 -    def chooseFriend(self):
-+    def chooseFriend(self, classScoresAtLeast=None, houguAtLeast=None, allowedReisous=[], requireKizunaReisou=False, requireKizunaReisouToNP=False, images=None):
++    def chooseFriend(self, isGrandBattle=None, classScoresAtLeast=None, houguAtLeast=None, allowedReisous=[], requireKizunaReisou=False, requireKizunaReisouToNP=False, images=None):
          refresh=False
          while not Detect(0,.3).isChooseFriend():
              if Detect.cache.isNoFriend():
-@@ -549,12 +836,14 @@ class Main:
+@@ -549,12 +861,14 @@ class Main:
                  fgoDevice.device.perform('\xBAK',(500,1000))
                  refresh=True
                  continue
@@ -1335,11 +1357,11 @@ index edb952e..237c71a 100644
              timer=time.time()
              while True:
 -                for i in(i for i,j in friendImg.items()if(lambda pos:pos and(fgoDevice.device.touch(pos),True)[-1])(Detect.cache.findFriend(j))):
-+                for i in(i for i,j in(candidates or friendImg.items())if (lambda pos:pos and(fgoDevice.device.touch(pos),True)[-1])(Detect.cache.findFriend(j, classScoresAtLeast, houguAtLeast, allowedReisous, requireKizunaReisou, requireKizunaReisouToNP))):
++                for i in(i for i,j in(candidates or friendImg.items())if (lambda pos:pos and(fgoDevice.device.touch(pos),True)[-1])(Detect.cache.findFriend(j, isGrandBattle, classScoresAtLeast, houguAtLeast, allowedReisous, requireKizunaReisou, requireKizunaReisouToNP))):
                      ClassicTurn.friendInfo=(lambda r:(lambda p:[
                          [[-1 if p[i*4+j]=='X'else int(p[i*4+j],16)for j in range(4)]for i in range(3)],
                          [-1 if p[i+12]=='X'else int(p[i+12],16)for i in range(2)],
-@@ -566,24 +855,82 @@ class Main:
+@@ -566,24 +880,85 @@ class Main:
              if refresh:schedule.sleep(max(0,timer+10-time.time()))
              fgoDevice.device.perform('\xBAK',(500,1000))
              refresh=True
@@ -1408,6 +1430,9 @@ index edb952e..237c71a 100644
 +        if self.baseSettings is None:self.baseSettings={k:getattr(self,k)for k in keys}
 +        settings=self.baseSettings|(self.questConfig.get(quest)if self.questConfig else{})
 +        for k,v in settings.items():setattr(self,k,v)
++        self.isGrandBattle=quest[0]==99 if quest else None
++        logger.info(f"resolving isGrandBattle and friendClassScoreAtLeast for quest {quest}")
++        self.resolveIsGrandBattleAndFriendClassScore()    # a quest-specific class score may have been applied; deduce isGrandBattle only if the quest ID didn't tell
 +        if self.questConfig:logger.info(f'Quest {quest} settings: {({k:v for k,v in settings.items()if k!="battleClass"})} battleClass: Battle({settings["battleClass"]().turnName})')
      def __call__(self):
          super().prepare()
