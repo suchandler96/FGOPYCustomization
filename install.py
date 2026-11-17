@@ -70,8 +70,6 @@ def main():
     shutil.copy(os.path.join(os.path.dirname(os.path.abspath(__file__)), "99.png"), os.path.join(fgo_py_dir, "fgoImage", "map", "entrance"))
     shutil.copytree(os.path.join(os.path.dirname(os.path.abspath(__file__)), "login"), os.path.join(fgo_py_dir, "fgoImage", "login"), dirs_exist_ok=True)   # auto login images, incl. login/flag
     shutil.copytree(os.path.join(os.path.dirname(os.path.abspath(__file__)), "grandBattle"), os.path.join(fgo_py_dir, "fgoImage", "map", "grandBattle"), dirs_exist_ok=True)
-    shutil.copy(os.path.join(os.path.dirname(os.path.abspath(__file__)), "map_99.png"), os.path.join(fgo_py_dir, "fgoImage", "map"))
-    shutil.move(os.path.join(fgo_py_dir, "fgoImage", "map", "map_99.png"), os.path.join(fgo_py_dir, "fgoImage", "map", "99.png"))   # rename
 
     os.system("cd " + os.path.dirname(os.path.abspath(__file__)) + " && git pull")
     os.system("cd " + fgo_py_dir + (" && git reset --hard origin/master" if platform.system() != "Windows" else "") + " && git apply " +

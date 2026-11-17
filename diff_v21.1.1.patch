@@ -109,7 +109,7 @@ index 7fb5e4d..ed39279 100644
  'closeToTray':False,
  'notifyEnable':False,
 diff --git a/FGO-py/fgoDetect.py b/FGO-py/fgoDetect.py
-index 1f70686..775a4a0 100644
+index 1f70686..d16daba 100644
 --- a/FGO-py/fgoDetect.py
 +++ b/FGO-py/fgoDetect.py
 @@ -3,7 +3,7 @@ from functools import reduce,wraps
@@ -117,7 +117,7 @@ index 1f70686..775a4a0 100644
  from fgoFuse import fuse
  from fgoLogging import getLogger,logMeta
 -from fgoMetadata import servantData,servantImg,classImg,materialImg,chapterImg,mapImg,questImg
-+from fgoMetadata import servantData,servantImg,classImg,materialImg,chapterImg,mapImg,questImg,grandImg
++from fgoMetadata import servantData,servantImg,classImg,materialImg,chapterImg,mapImg,questImg,mapGrandBattleClassIconImg,grandQuestBarImg
  from fgoOcr import Ocr
  from fgoSchedule import schedule
  logger=getLogger('Detect')
@@ -205,7 +205,22 @@ index 1f70686..775a4a0 100644
      @coroutine
      def _asyncImageChange(self,rect,threshold=.02):
          img=self._crop(rect)
-@@ -157,7 +220,7 @@ class XDetectBase(metaclass=logMeta(logger)):
+@@ -113,8 +176,12 @@ class XDetectBase(metaclass=logMeta(logger)):
+     def isMailListEnd(self):return self._isListEnd((937,679))
+     def isNetworkError(self):return self._compare(self.tmpl.NETWORKERROR,(703,529,974,597))
+     def isNoFriend(self):return self._compare(self.tmpl.NOFRIEND,(245,362,274,392))
+-    def isQuestFreeContains(self,chapter):return self._compare((questImg[chapter],None),(1075,115,1111,575))
+-    def isQuestFreeFirst(self,chapter):return self._compare((questImg[chapter],None),(1075,115,1111,270))
++    @staticmethod
++    def _questTmpl(quest):
++        # int chapter: original behavior. Tuple (99,class,variant[,slot]): the quest bar image of that exact quest, keyed by its first 3 elements
++        return questImg[quest]if isinstance(quest,int)else grandQuestBarImg[tuple(quest[:3])]
++    def isQuestFreeContains(self,quest):return self._compare((self._questTmpl(quest),None),(1075,115,1111,575))
++    def isQuestFreeFirst(self,quest):return self._compare((self._questTmpl(quest),None),(1075,115,1111,270))
+     def isQuestListBegin(self):return self._isListBegin((1258,95))
+     def isServantDead(self,pos,friend=None):return any((self._watchServantPortrait[pos].send(self),self._watchServantFriend[pos].send(self.isServantFriend(pos)if friend is None else friend)))
+     def isServantFriend(self,pos):return self._compare(self.tmpl.SUPPORT,(187+318*pos,394,225+318*pos,412))
+@@ -157,7 +224,7 @@ class XDetectBase(metaclass=logMeta(logger)):
          if self.enemyGird==0:return(0,0)if pos>2 else(lambda count:(lambda c2:(c2,c2)if c2 else(lambda c0,c1:(c1,c0+c1))(count(self.tmpl.CHARGE0),count(self.tmpl.CHARGE1),))(count(self.tmpl.CHARGE2)))(lambda img:self._count(img,(160+250*pos,67,250+250*pos,88)))
          if self.enemyGird==2:return(lambda count:(lambda c2:(c2,c2)if c2 else(lambda c0,c1:(c1,c0+c1))(count(self.tmpl.CHARGE0_SMALL),count(self.tmpl.CHARGE1_SMALL),))(count(self.tmpl.CHARGE2_SMALL)))(lambda img:self._count(img,(231+pos%3*200-pos//3*100,49+pos//3*99,311+pos%3*200-pos//3*100,72+pos//3*99)))
      def getFieldServant(self,pos):return(lambda img,cls:min((numpy.min(cv2.matchTemplate(img,i[0],cv2.TM_SQDIFF_NORMED,mask=i[1])),no)for no,(_,portrait,_)in servantImg.items()if servantData[no][0]==cls[0]for i in portrait)[1]if cls else 0)(self._crop((120+318*pos,421,207+318*pos,490)),self.getFieldServantClassRank(pos))
@@ -214,7 +229,7 @@ index 1f70686..775a4a0 100644
      def getFieldServantHp(self,pos):return self._ocrInt((200+317*pos,620,293+317*pos,644))
      def getFieldServantNp(self,pos):return self._ocrInt((220+317*pos,655,271+317*pos,680))
      def getMaterial(self):return(lambda x:{materialImg[i][0]:x.count(i)for i in set(x)-{None}})([self._select(((i[1],None)for i in materialImg),(176+i%7*137,110+i//7*142,253+i%7*137,187+i//7*142),.02)for i in range(1,21)])
-@@ -168,6 +231,57 @@ class XDetectBase(metaclass=logMeta(logger)):
+@@ -168,6 +235,57 @@ class XDetectBase(metaclass=logMeta(logger)):
      @retryOnError()
      @validate()
      def getStageTotal(self):return self._ocrInt((912,13,932,38))
@@ -272,12 +287,12 @@ index 1f70686..775a4a0 100644
      def getSummonHistory(self):XDetectBase._summonHistory=self._stack(XDetectBase._summonHistory,cv2.threshold(cv2.cvtColor(self._crop((147,157,1105,547)),cv2.COLOR_BGR2GRAY),128,255,cv2.THRESH_BINARY)[1],80)
      @classmethod
      def getSummonHistoryCount(cls):return cls.__new__(cls).inject(XDetectBase._summonHistory)._count((cls.tmpl.SUMMONHISTORY[0][...,0],cls.tmpl.SUMMONHISTORY[1]),(28,0,60,XDetectBase._summonHistory.shape[0]),.7)
-@@ -177,7 +291,151 @@ class XDetectBase(metaclass=logMeta(logger)):
+@@ -177,7 +295,151 @@ class XDetectBase(metaclass=logMeta(logger)):
      def getTeamServantClassRank(self):return[(lambda x:x if x is None else classImg[0][x])(self._select(CLASS[100],(30+200*i+15*(i>2),133,115+200*i+15*(i>2),203)))for i in range(6)]
      def getWeeklyMission(self):XDetectBase._weeklyMission=self._stack(XDetectBase._weeklyMission,self._crop((603,250,1092,710)),157)
      def findChapter(self,chapter):return self._find((chapterImg[chapter],None),(640,90,1230,600))
 -    def findFriend(self,img):return self._find(img,(13,166,1233,720),.04)
-+    def findGrandBattle(self,grandbattle):return self._find((grandImg[grandbattle],None),(50,320,140,450))
++    def findGrandBattleClass(self,quest):return self._find((mapGrandBattleClassIconImg[tuple(quest[:2])],None),(50,320,140,450))  # quest is (99,class,variant); the class icon only depends on (99,class)
 +    def findFriend(self, img, isGrandBattle=None, classScoresAtLeast=None, houguAtLeast=None, allowedReisous=[], requireKizunaReisou=False, requireKizunaReisouToNP=False):
 +        # an example of allowed_reisous: allowed_reisous=["KIZUNA10", "KIZUNA15", "KIZUNAORDEREDFEMALE", "KIZUNAORDEREDKIND", "KIZUNACLOTHES"]
 +        if not classScoresAtLeast and not houguAtLeast and not allowedReisous and not requireKizunaReisou and not requireKizunaReisouToNP:
@@ -425,7 +440,7 @@ index 1f70686..775a4a0 100644
      def findMail(self,img):return self._find(img,(73,166,920,720),.017)
      def findMapCamera(self,chapter):return numpy.array(cv2.minMaxLoc(cv2.matchTemplate(mapImg[chapter],cv2.resize(self._crop((200,200,1080,520)),(0,0),fx=.3,fy=.3,interpolation=cv2.INTER_CUBIC),cv2.TM_SQDIFF_NORMED))[2])/.3+(440,160)
      @classmethod
-@@ -193,6 +451,9 @@ class XDetectBase(metaclass=logMeta(logger)):
+@@ -193,6 +455,9 @@ class XDetectBase(metaclass=logMeta(logger)):
      def getTeamServantHouguLv(self):raise NotImplementedError
      def getTeamServantRank(self):raise NotImplementedError
      def getTeamServantSkillLv(self):raise NotImplementedError
@@ -435,7 +450,7 @@ index 1f70686..775a4a0 100644
  class XDetectCN(XDetectBase):
      tmpl=IMG_CN
      ocr=OCR.ZHS
-@@ -206,6 +467,19 @@ class XDetectCN(XDetectBase):
+@@ -206,6 +471,19 @@ class XDetectCN(XDetectBase):
                  mission=''
              else:mission+=i
          return result
@@ -455,7 +470,7 @@ index 1f70686..775a4a0 100644
  class XDetectJP(XDetectBase):
      tmpl=IMG_JP
      ocr=OCR.JA
-@@ -222,7 +496,7 @@ class DetectBase(XDetectBase):
+@@ -222,7 +500,7 @@ class DetectBase(XDetectBase):
      def __init__(self,anteLatency=.1,postLatency=0):
          schedule.sleep(anteLatency)
          super().__init__()
@@ -875,43 +890,98 @@ index 51f80f0..f8518b6 100644
        <source>0-0-0</source>
        <translation>宝物庫の扉を開け</translation>
 diff --git a/FGO-py/fgoI18n.zh.qm b/FGO-py/fgoI18n.zh.qm
-index 5a69cef..d18d12a 100644
+index 5a69cef..d869f7a 100644
 --- a/FGO-py/fgoI18n.zh.qm
 +++ b/FGO-py/fgoI18n.zh.qm
 @@ -1,4 +1,4 @@
 -<�d��!�`��ݧ   zh_CNB  �  3   �  4   	  4  �  4  U  4  <  4  h  4  �  4  K  4  �  5     5  �  5  �  5  !S  6   #.  6  %�  6  '�  6  )�  6  +H  6  ,�  6  .�  6  1�  7   4i  7  6�  8   9u  8  <� ,[|  � 0A`  #� 0Ap  5 0A�  :& 0A�  :h 0B`  #� 0Bp  4� 0B�  9� 0F�  ;  0G`  $3 0G�  :� 0H`  $	 0Hp  50 0H�  :� 3   � @AP  [ @Ap  7G @BP  3 @B`  &: @Bp  7 @B�  =J @Ep  7� @Fp  7� @Gp  7� @Hp  7q PB@  � PB`  (+ `B@  � `BP  !� �A@  � �B@  i �B`  -a �G@  � �H@  � �A@  � �A`  /� �B@  � �B`  /` �E`  0* �F`  0 �G@  @ �G`  /� �H@   �H`  /� �A@  Q �A`  2G �B@  + �B`  2 �E`  2� �F`  2� �G@  � �G`  2� �H@  y �H`  2s�E   �Aj�  
-+<�d��!�`��ݧ   zh_CNB  �  �  >�  3   �  4   	  4  �  4  U  4  <  4  h  4  �  4  K  4  �  5     5  �  5  �  5  !S  6   #.  6  %�  6  '�  6  )�  6  +H  6  ,�  6  .�  6  1�  7   4i  7  6�  8   9u  8  <� ,[|  � 0A`  #� 0Ap  5 0A�  :& 0A�  :h 0B`  #� 0Bp  4� 0B�  9� 0F�  ;  0G`  $3 0G�  :� 0H`  $	 0Hp  50 0H�  :� 3   � @AP  [ @Ap  7G @BP  3 @B`  &: @Bp  7 @B�  =J @Ep  7� @Fp  7� @Gp  7� @Hp  7q PB@  � PB`  (+ `B@  � `BP  !� �A@  � �B@  i �B`  -a �G@  � �H@  � �A@  � �A`  /� �B@  � �B`  /` �E`  0* �F`  0 �G@  @ �G`  /� �H@   �H`  /� �A@  Q �A`  2G �B@  + �B`  2 �E`  2� �F`  2� �G@  � �G`  2� �H@  y �H`  2s�E   �Aj�  
++<�d��!�`��ݧ   zh_CNB     �  >�  3   �  4   	  4  �  4  U  4  <  4  h  4  �  4  K  4  �  5     5  �  5  �  5  !S  6   #.  6  %�  6  '�  6  )�  6  +H  6  ,�  6  .�  6  1�  7   4i  7  6�  8   9u  8  <� ,[|  � 0A`  #� 0Ap  5 0A�  :& 0A�  :h 0B`  #� 0Bp  4� 0B�  9� 0F�  ;  0G`  $3 0G�  :� 0H`  $	 0Hp  50 0H�  :� 3   � @AP  [ @Ap  7G @BP  3 @B`  &: @Bp  7 @B�  =J @Ep  7� @Fp  7� @Gp  7� @Hp  7q PB@  � PB`  (+ `B@  � `BP  !� �A@  � �B@  i �B`  -a �G@  � �H@  � �A@  � �A`  /� �B@  � �B`  /` �E`  0* �F`  0 �G@  @ �G`  /� �H@   �H`  /� �A@  Q �A`  2G �B@  + �B`  2 �E`  2� �F`  2� �G@  � �G`  2� �H@  y �H`  2s�E   �Aj�  
  �|B  th�  `�Ϝ  ����  	T  ;Z��  �d��  �}1�  ���b  &0  *0  [0  �0  �0  �0  	0  P
  0  �0  �0  �0  #0  L0  q0  �	0  �
  0  �0  	0  .0  z0  �0  �0  0  F0  o	0  �
-@@ -55,7 +55,7 @@ n	
+@@ -53,9 +53,10 @@ n	
+ �
+ �K�  C
  ���  
- �G�  �z�  �;t  
+-�G�  �z�  �;t  
++�G�  �z�  ��  >��  ?�  ?F�  ?r�  ?�	�  ?�
++�  ?��  @Z�  @"�  @��  @�;t  
  9Jd  �R��   hY��  
 - ��  V�  	;�Z.  �f�7  ��.  ����  N��  Vi  >�   
-+ ��  V�  	;�Z.  �f�7  ��.  ����  N��  Vi  >�   
++ ��  V�  	;�Z.  �f�7  ��.  ����  N��  Vi  A   
  yxjNK{�Y4       ArrowheadOfMalice   material   g�QINK��       AuroraSteel   material   �yNK~�t       BallOfRainbowThread   material   ��Q}�       BlackBeastGrease   material   m�l�NKr*       ClawOfChaos   material   QI��NKQ�       CrownOfSilveryLight   material   T�Q}��w�       CursedBeastGallstone   material   
  Nk{v�kҔ�       DeadlyPoisonousNeedle   material   y^�	pu[P       DivineSpiritron   material   ��NKrY       
  DragonFang   material   ��NK���       DragonsReverseScale   material   wtNKSu       
-@@ -133,4 +133,4 @@ uN
+@@ -133,4 +134,11 @@ uN
  �f�2��^W:       5-1-4-0   quest   
  ~�c��g,��       5-1-5-0   quest   YV���       5-1-6-0   quest   
  �l�А�g,��       5-1-7-0   quest   ~�c��UFN�W       5-1-8-0   quest   
 -g�{Q��g,��       5-1-9-0   quest/  B �                                                                                                                                                                                                                                                                                                              questmaterial 
 \ No newline at end of file
-+g�{Q��g,��       5-1-9-0   quest   Q�OMb       99   quest
++g�{Q��g,��       5-1-9-0   quest   Q�OMb       99   quest   
++Q�OMb  RQ       99-1-0-0   quest   
++Q�OMb  _       99-2-0-0   quest   
++Q�OMb  g�       99-3-0-0   quest   
++Q�OMb  ��       99-4-0-0   quest   
++Q�OMb  g/       99-5-0-0   quest   
++Q�OMb  g@       99-6-0-0   quest   
++Q�OMb  r�       99-7-0-0   quest   Q�OMb  ��Y!`�SUOS�	       99-8-0-0   quest   Q�OMb  ��Y!`��OS�	       99-8-1-0   quest   Q�OMb  ��Y!a�SUOS�	       99-9-0-0   quest   Q�OMb  ��Y!a��OS�	       99-9-1-0   quest
 \ No newline at end of file
 diff --git a/FGO-py/fgoI18n.zh.ts b/FGO-py/fgoI18n.zh.ts
-index 4436762..d5af386 100644
+index 4436762..4ab9a9c 100644
 --- a/FGO-py/fgoI18n.zh.ts
 +++ b/FGO-py/fgoI18n.zh.ts
-@@ -334,6 +334,10 @@
+@@ -334,6 +334,54 @@
        <source>5-1</source>
        <translation>平面之月</translation>
      </message>
 +    <message>
 +      <source>99</source>
 +      <translation>冠位战</translation>
++    </message>
++    <message>
++      <source>99-1-0-0</source>
++      <translation>冠位战 剑</translation>
++    </message>
++    <message>
++      <source>99-2-0-0</source>
++      <translation>冠位战 弓</translation>
++    </message>
++    <message>
++      <source>99-3-0-0</source>
++      <translation>冠位战 枪</translation>
++    </message>
++    <message>
++      <source>99-4-0-0</source>
++      <translation>冠位战 骑</translation>
++    </message>
++    <message>
++      <source>99-5-0-0</source>
++      <translation>冠位战 术</translation>
++    </message>
++    <message>
++      <source>99-6-0-0</source>
++      <translation>冠位战 杀</translation>
++    </message>
++    <message>
++      <source>99-7-0-0</source>
++      <translation>冠位战 狂</translation>
++    </message>
++    <message>
++      <source>99-8-0-0</source>
++      <translation>冠位战 额外Ⅰ（单体）</translation>
++    </message>
++    <message>
++      <source>99-8-1-0</source>
++      <translation>冠位战 额外Ⅰ（群体）</translation>
++    </message>
++    <message>
++      <source>99-9-0-0</source>
++      <translation>冠位战 额外Ⅱ（单体）</translation>
++    </message>
++    <message>
++      <source>99-9-1-0</source>
++      <translation>冠位战 额外Ⅱ（群体）</translation>
 +    </message>
      <message>
        <source>0-0-0</source>
@@ -930,7 +1000,7 @@ index 234771d..a39059d 100644
          self.ends=ends
          self.listener=DirListener(path)
 diff --git a/FGO-py/fgoKernel.py b/FGO-py/fgoKernel.py
-index edb952e..e70ea46 100644
+index edb952e..b99a594 100644
 --- a/FGO-py/fgoKernel.py
 +++ b/FGO-py/fgoKernel.py
 @@ -17,10 +17,12 @@
@@ -965,7 +1035,7 @@ index edb952e..e70ea46 100644
  @serialize(mutex)
  def weeklyMission():
      while not Detect(0,1).isMainInterface():pass
-@@ -414,15 +417,265 @@ class Turn:
+@@ -414,15 +417,263 @@ class Turn:
          else:fgoDevice.device.perform('\x08',(700,))
          while not Detect().isTurnBegin():pass
          Detect(.5)
@@ -1223,8 +1293,6 @@ index edb952e..e70ea46 100644
 +    def getServantHP(self): return [Detect.cache.getFieldServantHp(i)if self.servant[i][0]else 999999 for i in range(3)]
 +
 +
-+
-+# Customized Turns
  class Battle:
      def __init__(self,turnClass=Turn):
          self.turn=0
@@ -1232,7 +1300,7 @@ index edb952e..e70ea46 100644
          self.turnProc=turnClass()
          self.rainbowBox=False
      def __call__(self):
-@@ -462,10 +715,44 @@ class Battle:
+@@ -462,10 +713,44 @@ class Battle:
  class Main:
      teamIndex=0
      autoFormation=False
@@ -1278,7 +1346,7 @@ index edb952e..e70ea46 100644
      @serialize(mutex)
      def __call__(self,questIndex=0,battleTotal=None):
          self.prepare()
-@@ -473,7 +760,7 @@ class Main:
+@@ -473,7 +758,7 @@ class Main:
              self.battleProc=self.battleClass()
              while True:
                  if Detect(.3,.3).isMainInterface():
@@ -1287,7 +1355,7 @@ index edb952e..e70ea46 100644
                      fgoDevice.device.press('84L'[questIndex])
                      questIndex=0
                      if Detect(1.2).isBattleContinue():fgoDevice.device.press('K')
-@@ -481,19 +768,44 @@ class Main:
+@@ -481,19 +766,44 @@ class Main:
                          fgoDevice.device.press('J')
                          return logger.info('No Storm Pot')
                      if Detect(.7,.3).isApEmpty()and not self.eatApple():return logger.info('Ap Empty')
@@ -1335,7 +1403,7 @@ index edb952e..e70ea46 100644
                      schedule.sleep(6)
                      break
                  elif Detect.cache.isSkillCastFailed():
-@@ -541,7 +853,7 @@ class Main:
+@@ -541,7 +851,7 @@ class Main:
          logger.warning('Eat Apple')
          return self.appleTotal+1
      @logit(logger,logging.INFO)
@@ -1344,7 +1412,7 @@ index edb952e..e70ea46 100644
          refresh=False
          while not Detect(0,.3).isChooseFriend():
              if Detect.cache.isNoFriend():
-@@ -549,12 +861,14 @@ class Main:
+@@ -549,12 +859,14 @@ class Main:
                  fgoDevice.device.perform('\xBAK',(500,1000))
                  refresh=True
                  continue
@@ -1361,7 +1429,7 @@ index edb952e..e70ea46 100644
                      ClassicTurn.friendInfo=(lambda r:(lambda p:[
                          [[-1 if p[i*4+j]=='X'else int(p[i*4+j],16)for j in range(4)]for i in range(3)],
                          [-1 if p[i+12]=='X'else int(p[i+12],16)for i in range(2)],
-@@ -566,24 +880,85 @@ class Main:
+@@ -566,24 +878,85 @@ class Main:
              if refresh:schedule.sleep(max(0,timer+10-time.time()))
              fgoDevice.device.perform('\xBAK',(500,1000))
              refresh=True
@@ -1482,50 +1550,50 @@ index 98deec9..3d5949f 100644
          self.MENU_FILE_QUIT.setText(QCoreApplication.translate("fgoMainWindow", u"\u9000\u51fa", None))
          self.MENU_CONTROL_TRAY.setText(QCoreApplication.translate("fgoMainWindow", u"\u5173\u95ed\u5230\u6258\u76d8", None))
 diff --git a/FGO-py/fgoMetadata.py b/FGO-py/fgoMetadata.py
-index f3a1d94..ceffc5f 100644
+index f3a1d94..0db8f34 100644
 --- a/FGO-py/fgoMetadata.py
 +++ b/FGO-py/fgoMetadata.py
 @@ -657,6 +657,7 @@ missionMat=numpy.array((
  missionTag=((),('小怪','天'),('小怪','魔术师'),('小怪','门系'),('小怪',),('小怪','人'),('小怪','死灵'),('小怪','魔性'),('小怪','剑士'),('小怪','骷髅系'),('小怪','枪兵'),('小怪','弓兵'),('小怪','地'),('小怪','暗匿者'),('小怪','男性'),('小怪','人型'),('小怪','人类'),('小怪','士兵系'),('小怪','龙'),('小怪','骑兵'),('小怪','双足飞龙系'),('小怪','僵尸系'),('小怪','猛兽'),('小怪','犬型'),('小怪','兽人系'),('小怪','罗马'),('小怪','狂战士'),('小怪','魔偶系'),('小怪','鬼魂系'),('小怪','奇美拉系'),('小怪','寄居蟹系'),('小怪','女性'),('小怪','蛇女系'),('小怪','希腊神话系男性'),('小怪','半人马系'),('小怪','亚马逊系'),('小怪','自动人偶系'),('小怪','人工生命体系'),('小怪','书页系'),('小怪','混沌机械兵系'),('小怪','机械化步兵系'),('小怪','凯尔特士兵系'),('小怪','噬魂者系'),('小怪','恶魔'),('小怪','凝视者系'),('小怪','双角兽系'),('小怪','超巨大'),('小怪','守护者系'),('小怪','神性'),('小怪','斯芬克斯系'),('小怪','伊夫利塔系'),('小怪','失心者系'),('小怪','骑士系'),('小怪','自动防卫装置系'),('小怪','乌利迪姆系'),('小怪','乌伽尔系'),('小怪','穆修胡休系'),('小怪','海魔系'),('小怪','巨龙系'),('小怪','魔猪系'),('小怪','巨大魔猪系'),('小怪','恶'),('小怪','小混混系'),('小怪','雀蜂系'),('小怪','王'),('小怪','流氓系'),('小怪','恶魔系'),('小怪','女海盗系'),('小怪','酷吏系'),('小怪','许德拉系'),('小怪','黑武者系'),('小怪','鬼'),('小怪','秽神系'),('小怪','灰狼系'),('小怪','食尸鬼系'),('小怪','夏塔克鸟系'),('小怪','雅嘎系'),('小怪','杀戮猎兵系'),('小怪','巨人'),('小怪','瓦尔基里系'),('小怪','坦克系'),('小怪','禁卫兵系'),('小怪','迦利系'),('小怪','伟大那伽系'),('小怪','刻耳柏洛斯系'),('小怪','亚特兰蒂斯防卫兵系'),('小怪','广域歼灭兵器系'),('小怪','奥林波斯兵系'),('小怪','土蜘蛛系'),('小怪','大翁鬼系'),('小怪','机械'),('小怪','小鬼系'),('小怪','妖精'),('小怪','复仇者'),('小怪','摩尔斯系'),('小怪','牙之氏族系'),('小怪','肃正骑士系'),('小怪','龙系'),('小怪','摩根兵系'),('小怪','皮克特人系'),('小怪','巨人系'),('小怪','翅刃虫系'),('小怪','从者','男性'),('小怪','从者','暗匿者'),('小怪','从者','狂战士'),('小怪','从者','人'),('小怪','从者','人型'),('小怪','职阶从者系'),('小怪','从者'),('小怪','从者','女性'),('小怪','从者','剑士'),('小怪','从者','魔术师'),('小怪','从者','死灵'),('小怪','从者','天'),('小怪','从者','魔性'),('小怪','从者','枪兵'),('小怪','斩首鸡系'),('小怪','从者','弓兵'),('小怪','从者','骑兵'),('小怪','从者','骑乘'),('小怪','咒毒虫系'),('从者','地'),('从者','女性'),('从者','人型'),('从者','神性'),('从者','骑乘'),('从者','骑兵'),('从者','混沌'),('从者','善'),('从者',),('从者','人'),('从者','男性'),('从者','所爱之人'),('从者','枪兵'),('从者','暗匿者'),('从者','和风'),('从者','秩序'),('从者','恶'),('从者','王'),('从者','龙'),('从者','剑士'),('从者','阿尔托莉雅脸'),('从者','幸运A+以上'),('从者','狂战士'),('从者','狂'),('从者','魔术师'),('从者','裁定者'),('从者','罗马'),('从者','中立'),('从者','中庸'),('从者','星'),('从者','希腊神话系男性'),('从者','天'),('从者','太阳'),('从者','弓兵'),('从者','人类'),('从者','哈桑系'),('从者','猛兽'),('从者','复仇者'),('从者','犬型'),('从者','魔性'),('从者','其他性别'),('从者','阿耳戈船相关人员'),('从者','天地从者'),('从者','人科'),('从者','源氏'),('从者','孩童从者'),('从者','鬼'),('从者','妖精'),('从者','圆桌骑士'),('从者','魔兽型'),('场地','燃烧'),('场地','都市'),('场地','城市'),('场地','地下'),('场地','阳光照射'),('场地','山丘'),('场地','森林'),('场地','城池'),('场地','荒野'),('场地','山'),('场地','水边'),('场地','沙滩·沙漠'),('场地','神殿'),('场地','岩山'),('场地','草原'))
  missionQuest=((0,0,0),(1,0,0,0),(1,0,1,0),(1,0,2,0),(1,0,3,0),(1,0,4,0),(1,0,5,0),(1,0,6,0),(1,0,7,0),(1,1,0,0),(1,1,1,0),(1,1,2,0),(1,1,3,0),(1,1,4,0),(1,1,5,0),(1,1,6,0),(1,1,7,0),(1,1,8,0),(1,1,9,0),(1,2,0,0),(1,2,1,0),(1,2,2,0),(1,2,3,0),(1,2,4,0),(1,2,5,0),(1,2,6,0),(1,2,7,0),(1,2,8,0),(1,2,9,0),(1,2,10,0),(1,3,0,0),(1,3,1,0),(1,3,2,0),(1,3,3,0),(1,3,4,0),(1,3,5,0),(1,3,6,0),(1,3,7,0),(1,3,7,1),(1,3,8,0),(1,3,9,0),(1,3,10,0),(1,4,0,0),(1,4,1,0),(1,4,2,0),(1,4,3,0),(1,4,4,0),(1,4,5,0),(1,4,6,0),(1,4,7,0),(1,4,8,0),(1,5,0,0),(1,5,1,0),(1,5,2,0),(1,5,3,0),(1,5,4,0),(1,5,5,0),(1,5,6,0),(1,5,7,0),(1,5,8,0),(1,5,9,0),(1,5,10,0),(1,5,11,0),(1,5,12,0),(1,5,13,0),(1,6,0,0),(1,6,1,0),(1,6,2,0),(1,6,3,0),(1,6,4,0),(1,6,5,0),(1,6,6,0),(1,6,7,0),(1,6,8,0),(1,6,9,0),(1,6,10,0),(1,6,11,0),(1,6,12,0),(1,6,13,0),(1,7,0,0),(1,7,1,0),(1,7,2,0),(1,7,3,0),(1,7,4,0),(1,7,5,0),(1,7,6,0),(1,7,7,0),(1,7,8,0),(1,7,9,0),(1,7,10,0),(1,7,11,0),(1,7,12,0),(1,7,13,0),(2,0,0,0),(2,0,1,0),(2,0,2,0),(2,0,3,0),(2,0,4,0),(2,0,5,0),(2,0,6,0),(2,0,7,0),(2,0,8,0),(2,0,9,0),(2,1,0,0),(2,1,1,0),(2,1,2,0),(2,1,3,0),(2,1,4,0),(2,1,5,0),(2,1,6,0),(2,1,7,0),(2,1,8,0),(2,1,9,0),(2,1,10,0),(2,1,11,0),(2,2,0,0),(2,2,1,0),(2,2,2,0),(2,2,3,0),(2,2,4,0),(2,2,5,0),(2,2,6,0),(2,2,6,1),(2,2,7,0),(2,3,0,0),(2,3,1,0),(2,3,2,0),(2,3,3,0),(2,3,4,0),(2,3,5,0),(2,3,6,0),(2,3,7,0),(2,3,8,0),(2,3,9,0),(2,3,10,0),(3,0,0,0),(3,0,1,0),(3,0,2,0),(3,0,3,0),(3,0,4,0),(3,0,5,0),(3,0,6,0),(3,0,7,0),(3,0,8,0),(3,0,9,0),(3,0,10,0),(3,0,11,0),(3,0,12,0),(3,0,13,0),(3,1,0,0),(3,1,1,0),(3,1,2,0),(3,1,3,0),(3,1,4,0),(3,1,5,0),(3,1,6,0),(3,1,7,0),(3,1,8,0),(3,1,9,0),(3,1,10,0),(3,2,0,0),(3,2,1,0),(3,2,2,0),(3,2,3,0),(3,2,4,0),(3,2,5,0),(3,2,6,0),(3,2,7,0),(3,2,8,0),(3,2,9,0),(3,2,10,0),(3,3,0,0),(3,3,1,0),(3,3,2,0),(3,3,3,0),(3,3,4,0),(3,3,5,0),(3,3,6,0),(3,3,7,0),(3,3,8,0),(3,3,9,0),(3,4,0,0),(3,4,1,0),(3,4,2,0),(3,4,3,0),(3,4,4,0),(3,4,5,0),(3,4,6,0),(3,4,7,0),(3,4,8,0),(3,5,0,0),(3,5,1,0),(3,5,2,0),(3,5,3,0),(3,5,4,0),(3,5,5,0),(3,5,6,0),(3,5,7,0),(3,5,8,0),(3,5,9,0),(3,5,10,0),(4,0,0,0),(4,0,1,0),(4,0,2,0),(4,0,3,0),(4,0,4,0),(4,0,5,0),(4,0,6,0),(4,0,7,0),(4,0,8,0),(4,0,9,0),(4,0,10,0),(4,0,11,0),(4,0,12,0),(3,6,0,0),(3,6,1,0),(3,6,2,0),(3,6,3,0),(3,6,4,0),(3,6,5,0),(3,6,6,0),(3,6,7,0),(3,6,8,0),(3,6,9,0),(3,6,10,0),(3,6,11,0),(3,6,12,0),(3,6,13,0),(3,6,14,0),(3,6,15,0),(4,1,0,0),(4,1,1,0),(4,1,2,0),(4,1,3,0),(4,1,4,0),(4,1,5,0),(4,1,6,0),(4,1,7,0),(4,1,8,0),(4,1,9,0),(4,1,10,0),(4,1,11,0),(4,1,12,0),(4,1,13,0),(4,1,14,0),(4,1,15,0))
  quest=missionQuest+((3,7,0,0),(3,7,1,0),(3,7,2,0),(3,7,3,0),(3,7,4,0),(3,7,5,0),(3,7,6,0),(3,7,7,0),(3,7,8,0),(3,7,9,0),(3,7,10,0),(3,7,11,0),(3,7,12,0),(3,7,13,0),(3,7,14,0),(3,7,15,0),(5,0,0,0),(5,0,1,0),(5,0,2,0),(5,0,2,1),(5,0,3,0),(5,0,4,0),(5,0,5,0),(5,0,6,0),(5,0,7,0),(5,0,8,0),(5,0,9,0),(5,0,10,0),(5,0,11,0),(5,0,11,1),(5,0,12,0),(5,0,13,0),(5,0,14,0),(5,1,0,0),(5,1,1,0),(5,1,2,0),(5,1,3,0),(5,1,4,0),(5,1,5,0),(5,1,6,0),(5,1,7,0),(5,1,8,0),(5,1,9,0),(5,1,10,0))
-+grandQuest=((99,1,0),(99,2,0),(99,3,0),(99,4,0),(99,5,0),(99,6,0),(99,7,0),(99,8,0),(99,9,0))
++grandQuest=((99,1,0,0),(99,2,0,0),(99,3,0,0),(99,4,0,0),(99,5,0,0),(99,6,0,0),(99,7,0,0),(99,8,0,0),(99,8,1,0),(99,9,0,0),(99,9,1,0))
  def readSplit(file,height):return(lambda img:[(lambda x:(x[...,:3],x[...,3]))(img[i*height:(i+1)*height])for i in range(img.shape[0]//height)])(cv2.imread(file,cv2.IMREAD_UNCHANGED))
  servantImg={i:(
      readSplit(f'fgoImage/servant/{i}/card.png',47),
-@@ -669,3 +670,4 @@ chapterImg={tuple(int(i)for i in i[:-4].split('-')):cv2.imread(f'fgoImage/map/en
+@@ -669,3 +670,5 @@ chapterImg={tuple(int(i)for i in i[:-4].split('-')):cv2.imread(f'fgoImage/map/en
  mapImg={tuple(int(i)for i in i[:-4].split('-')):cv2.imread(f'fgoImage/map/atlas/{i}')for i in os.listdir('fgoImage/map/atlas')}
  questImg={int(i[:-4]):cv2.imread(f'fgoImage/map/{i}')for i in os.listdir('fgoImage/map')if i.endswith('.png')}
  questImg[4]=questImg[3]
-+grandImg={tuple(int(i)for i in i[:-4].split('-')):cv2.imread(f'fgoImage/map/grandBattle/{i}')for i in os.listdir('fgoImage/map/grandBattle')}
++mapGrandBattleClassIconImg={tuple(int(i)for i in i[:-4].split('-')):cv2.imread(f'fgoImage/map/grandBattle/classicon/{i}')for i in os.listdir('fgoImage/map/grandBattle/classicon')if i.endswith('.png')}
++grandQuestBarImg={tuple(int(i)for i in i[:-4].split('-')):cv2.imread(f'fgoImage/map/grandBattle/questbar/{i}')for i in os.listdir('fgoImage/map/grandBattle/questbar')if i.endswith('.png')}
 diff --git a/FGO-py/fgoReishift.py b/FGO-py/fgoReishift.py
-index 1a9ec6f..cafdf9e 100644
+index 1a9ec6f..6329d0c 100644
 --- a/FGO-py/fgoReishift.py
 +++ b/FGO-py/fgoReishift.py
-@@ -49,6 +49,22 @@ class OrdaelCall:
+@@ -49,6 +49,21 @@ class OrdaelCall:
          if self.coord:
              fgoDevice.device.perform('\x67'+''.join(i*j for i,j in zip('\x25\x26\x27\x28',self.move)),(1000,)+(2000,)*sum(self.move))
              fgoDevice.device.touch(self.coord)
 +class GrandBattle:
 +    def __init__(self, name):
-+        self.name=name
++        self.name=name   # (99,class,variant): reishift() looks places up by every prefix of the 4-long quest ID (99,class,variant,0)
 +    def __call__(self):
 +        while not Detect(1).isMainInterface():pass
 +        schedule.sleep(5)
-+        while not Detect(1).findGrandBattle(self.name):
++        while not Detect(1).findGrandBattleClass(self.name):  # self.name is (99,class,variant), e.g. (99,8,1)
 +            fgoDevice.device.touch((224,500))   # press the down button
 +            schedule.sleep(5)
 +        fgoDevice.device.touch((1014,575))
 +        schedule.sleep(5)
-+        for _ in range(4):
++        for _ in range(4 if self.name[1] not in [8, 9] else 6):     # swipe more for Extra I & II
 +            fgoDevice.device.swipe((1000,600),(1000,200))   # swipe to the bottom
 +            schedule.sleep(.7)
-+        # grand battles have quest[0] == 99
-+        # while not Detect(.5).isQuestFreeFirst(99):fgoDevice.device.swipe((1000,300),(1000,400))
++        while not Detect(.5).isQuestFreeFirst(self.name):fgoDevice.device.swipe((1000,300),(1000,400))
  
  place={i.name:i for i in(
  List((0,)),List((1,)),List((2,)),List((4,)),List((5,)),
-@@ -57,6 +73,7 @@ List((1,0)),List((1,1)),List((1,2)),List((1,3)),List((1,4)),List((1,5)),List((1,
+@@ -57,6 +72,7 @@ List((1,0)),List((1,1)),List((1,2)),List((1,3)),List((1,4)),List((1,5)),List((1,
  List((2,0)),List((2,1)),List((2,2)),List((2,3)),
  List((3,0)),List((3,1)),List((3,2)),List((3,3)),List((3,4)),List((3,5)),List((3,6)),List((3,7)),
  List((4,0)),List((4,1)),
@@ -1533,26 +1601,11 @@ index 1a9ec6f..cafdf9e 100644
  OrdaelCall((5,1),0,(1103,183)),
  Map((1,0,0),(770,415)),Map((1,0,1),(898,910)),Map((1,0,2),(1397,635)),Map((1,0,3),(1483,318)),Map((1,0,4),(1941,869)),Map((1,0,5),(582,748)),Map((1,0,6),(374,1006)),Map((1,0,7),(382,552)),
  Map((1,1,0),(1689,385)),Map((1,1,1),(1536,314)),Map((1,1,2),(1227,557)),Map((1,1,3),(1576,634)),Map((1,1,4),(1554,883)),Map((1,1,5),(1030,780)),Map((1,1,6),(864,424)),Map((1,1,7),(1030,212)),Map((1,1,8),(1754,1086)),Map((1,1,9),(504,933)),
-@@ -93,6 +110,7 @@ OrdaelCall((5,0,5),1,(566,165)),OrdaelCall((5,0,6),0,(437,473)),
+@@ -93,6 +109,7 @@ OrdaelCall((5,0,5),1,(566,165)),OrdaelCall((5,0,6),0,(437,473)),
  OrdaelCall((5,0,7),1,(905,238)),OrdaelCall((5,0,8),0,(401,338)),OrdaelCall((5,0,9),1,(604,640)),OrdaelCall((5,0,10),1,(873,357)),
  OrdaelCall((5,0,11),0),OrdaelCall((5,0,12),0,(475,332)),OrdaelCall((5,0,13),2,(670,627),(0,1,0,0)),OrdaelCall((5,0,14),0,(838,467)),
  Map((5,1,0),(805,1684)),Map((5,1,1),(1222,1723)),Map((5,1,2),(1197,1321)),Map((5,1,3),(980,1046)),Map((5,1,4),(1010,1238)),Map((5,1,5),(1391,1055)),Map((5,1,6),(824,930)),Map((5,1,7),(1830,1355)),Map((5,1,8),(1654,1176)),Map((5,1,9),(562,1373)),Map((5,1,10),(793,1121)),
-+GrandBattle((99,1)),GrandBattle((99,2)),GrandBattle((99,3)),GrandBattle((99,4)),GrandBattle((99,5)),GrandBattle((99,6)),GrandBattle((99,7)),GrandBattle((99,8)),GrandBattle((99,9)),
++GrandBattle((99,1,0)),GrandBattle((99,2,0)),GrandBattle((99,3,0)),GrandBattle((99,4,0)),GrandBattle((99,5,0)),GrandBattle((99,6,0)),GrandBattle((99,7,0)),GrandBattle((99,8,0)),GrandBattle((99,8,1)),GrandBattle((99,9,0)),GrandBattle((99,9,1)),
  )}
  def reishift(quest):
      for i in range(1,len(quest)):
-diff --git a/readme.md b/readme.md
-index 187c00d..d113e28 100644
---- a/readme.md
-+++ b/readme.md
-@@ -246,3 +246,10 @@ v9.1及更早版本提供的需要配置的战斗,不建议在以下之外的场
- # 版本记录 Version Logs
- 
- see [versions.md](doc/versions.md)  
-+
-+## 按关卡配置 Per-quest Config
-+
-+`main -c quests.json` (CLI) or the `questConfig` item in `fgoConfig.json` (GUI) selects the Turn class and friend servant per quest.
-+See `fgoQuestConfig.example.json`: `quests` keys are quest IDs like `main -q`, `turnClass` must be a `Turn`/`CustomTurn` subclass name in `fgoKernel.py`,
-+`friendImage` is a name (or list) from `fgoImage/friend/`, plus the usual `friend*` filters. Unlisted quests use `default`, then the command-line settings.
-+How many times each quest runs is still set by the GUI quest list or `-q`.
