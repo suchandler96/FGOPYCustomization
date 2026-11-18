@@ -20,10 +20,10 @@ index 7e0c18f..1c2de81 100644
              self.rotation_watcher.reg_callback(lambda _:self.adjustOffset())
          except Exception as e:
 diff --git a/FGO-py/fgoCli.py b/FGO-py/fgoCli.py
-index 44dc241..c5792aa 100644
+index 44dc241..3ba1fbb 100644
 --- a/FGO-py/fgoCli.py
 +++ b/FGO-py/fgoCli.py
-@@ -49,13 +49,23 @@ Some commands support <command> [<subcommand> ...] {{-h, --help}} for further in
+@@ -49,13 +49,24 @@ Some commands support <command> [<subcommand> ...] {{-h, --help}} for further in
          return line
      def postcmd(self,stop,line):
          if not stop and line:logger.info(f'Done in {time.time()-self.time:.3f}s')
@@ -43,24 +43,25 @@ index 44dc241..c5792aa 100644
 -        self.work=fgoKernel.Battle()
 +        # the quest config's "default" entry picks the Turn class; no turnClass there means the plain Battle()
 +        # QuestConfig.parse already resolved turnClass (abbreviations included) into a 'battleClass' factory
-+        battleClass=fgoKernel.QuestConfig(arg.questConfig).default.get('battleClass')if arg.questConfig else None
++        questConfig=arg.questConfig or self.config.questConfig or None
++        battleClass=fgoKernel.QuestConfig(questConfig).default.get('battleClass')if questConfig else None
 +        self.work=battleClass()if battleClass else fgoKernel.Battle()
          self.do_continue(f'-s {arg.sleep}')
      def do_bench(self,line):
          'Benchmark'
-@@ -154,7 +164,10 @@ Some commands support <command> [<subcommand> ...] {{-h, --help}} for further in
+@@ -154,7 +165,10 @@ Some commands support <command> [<subcommand> ...] {{-h, --help}} for further in
          'Loop for battle until AP empty'
          arg=parser_main.parse_args(line.split())
          fgoKernel.schedule.stopLater(arg.appoint)
 -        self.work=fgoKernel.Operation(arg.quest,arg.appleCount,['gold','silver','bronze','copper','quartz'].index(arg.appleKind),wait=arg.wait)
 +        self.work=fgoKernel.Operation(arg.quest,arg.appleCount,['gold','silver','bronze','copper','quartz'].index(arg.appleKind),wait=arg.wait,
-+                                      questConfig=arg.questConfig,
++                                      questConfig=arg.questConfig or self.config.questConfig or None,
 +                                      waitForAp=arg.waitForAp,
 +                                      battleTotal=arg.appoint)
          self.do_continue(f'-s {arg.sleep}')
      def complete_main(self,text,line,begidx,endidx):
          return self.completecommands({
-@@ -239,6 +252,8 @@ Some commands support <command> [<subcommand> ...] {{-h, --help}} for further in
+@@ -239,6 +253,8 @@ Some commands support <command> [<subcommand> ...] {{-h, --help}} for further in
          'Adapt none 16:9 screen'
          arg=parser_169.parse_args(line.split())
          assert fgoDevice.device.available
@@ -69,7 +70,7 @@ index 44dc241..c5792aa 100644
          getattr(fgoDevice.device,f'{arg.action}169')()
      def complete_169(self,text,line,begidx,endidx):
          return self.completecommands({
-@@ -265,6 +280,7 @@ class ArgStruct:
+@@ -265,6 +281,7 @@ class ArgStruct:
  
  parser_battle=ArgParser(prog='battle',description=Cmd.do_battle.__doc__)
  parser_battle.add_argument('-s','--sleep',help='Sleep before run (default: %(default)s)',type=validator(str,lambda x:re.match(r'\d+([:.]\d+)*$',x),'timedelta'),default='0')
@@ -77,7 +78,7 @@ index 44dc241..c5792aa 100644
  
  parser_bench=ArgParser(prog='bench',description=Cmd.do_bench.__doc__)
  parser_bench.add_argument('-n','--number',help='Number of runs (default: %(default)s)',type=validator(int,lambda x:x>=3,'not-less-than-3 int'),default=20)
-@@ -290,6 +306,9 @@ parser_main.add_argument('-s','--sleep',help='Sleep before run (default: %(defau
+@@ -290,6 +307,9 @@ parser_main.add_argument('-s','--sleep',help='Sleep before run (default: %(defau
  parser_main.add_argument('-a','--appoint',help='Battle count limit (default: %(default)s for no limit)',type=validator(int,lambda x:x>=0,'nonnegative int'),default=0)
  parser_main.add_argument('-q','--quest',help='Goto different quests for different times',action='append',type=ArgStruct(lambda x:tuple(int(i)for i in x.split('-')),validator(int,lambda x:x>=0,'nonnegative int')),default=[],nargs=2)
  parser_main.add_argument('-w','--wait',help='When quest set, wait before each quest to ensure sufficient AP',action='store_true')
@@ -87,7 +88,7 @@ index 44dc241..c5792aa 100644
  
  parser_press=ArgParser(prog='press',description=Cmd.do_press.__doc__)
  parser_press.add_argument('button',help='Button',type=str.upper)
-@@ -328,6 +347,6 @@ parser_week.add_argument('-c','--cmd',help='Print cmd line instead of pretty lis
+@@ -328,6 +348,6 @@ parser_week.add_argument('-c','--cmd',help='Print cmd line instead of pretty lis
  parser_week.add_argument('-e','--exec',help='Execute the solved quest queue',action='store_true')
  
  parser_169=ArgParser(prog='169',description=Cmd.do_169.__doc__)
@@ -109,7 +110,7 @@ index 7fb5e4d..ed39279 100644
  'closeToTray':False,
  'notifyEnable':False,
 diff --git a/FGO-py/fgoDetect.py b/FGO-py/fgoDetect.py
-index 1f70686..d16daba 100644
+index 1f70686..890df9e 100644
 --- a/FGO-py/fgoDetect.py
 +++ b/FGO-py/fgoDetect.py
 @@ -3,7 +3,7 @@ from functools import reduce,wraps
@@ -446,7 +447,7 @@ index 1f70686..d16daba 100644
      def getTeamServantSkillLv(self):raise NotImplementedError
 +    def findLogin(self,img,threshold=.5):return self._find(img,(0,0,1280,720),threshold)
 +    # Right-hand button ("Retry"/"Enter") of the title-screen dialogs (connection lost / resume battle). The text is masked out, so one template fits both.
-+    def findLoginDialog(self):return self._find(self.tmpl.BATTLECONTINUE,(665,478,1014,636),.05)
++    def findLoginBattleContinueOrReconnectDialog(self):return self._find(self.tmpl.BATTLECONTINUE,(665,478,1014,636),.05)
  class XDetectCN(XDetectBase):
      tmpl=IMG_CN
      ocr=OCR.ZHS
@@ -480,7 +481,7 @@ index 1f70686..d16daba 100644
      def _compare(self,*args,**kwargs):return super()._compare(*args,**kwargs)and fuse.reset(self)
      def _find(self,*args,**kwargs):
 diff --git a/FGO-py/fgoDevice.py b/FGO-py/fgoDevice.py
-index 92541a2..83f40b3 100644
+index 92541a2..05a5d83 100644
 --- a/FGO-py/fgoDevice.py
 +++ b/FGO-py/fgoDevice.py
 @@ -1,5 +1,6 @@
@@ -491,21 +492,16 @@ index 92541a2..83f40b3 100644
  from fgoLogging import getLogger
  from fgoSchedule import schedule
  logger=getLogger('Device')
-@@ -47,6 +48,73 @@ class Device:
+@@ -47,6 +48,95 @@ class Device:
      def available(self):return self.I.available and(self.I is self.O or self.O.available)
      def perform(self,pos,wait):[(self.press(i),schedule.sleep(j*.001))for i,j in zip(pos,wait)]
      def touch(self,pos,wait=0):(self.I.touch(pos),schedule.sleep(wait*.001))
 +    @property
-+    def isEmulator(self):return str(self.I.name or'').startswith(('127.0.0.1','localhost','emulator','[::1]'))
-+    def restartFGO(self):
-+        # Emulator (localhost adb serial): restart the whole emulator process; other devices: only restart the app.
-+        if self.isEmulator:
-+            try:return self.restartEmulator()
-+            except Exception as e:logger.exception(e);logger.warning('Restarting emulator failed, fall back to restarting app only')
-+        self.returnHomeAndClearFGOBackgroundAndRestart()
++    def isEmulator(self):return str(self.I.name or'').startswith(('127.0.0.1','localhost','emulator','bs4','bs5','[::1]'))
 +    def restartEmulator(self):
 +        # Configured by env: FGO_EMULATOR_PATH (executable, required), FGO_EMULATOR_PROCESS (process name to kill, default basename of the path),
 +        # FGO_EMULATOR_ARGS (launch args, {package} is substituted, default "-p {package} -v 0" as MuMuPlayer), FGO_EMULATOR_WAIT (seconds, default 20)
++        if not self.isEmulator:raise RuntimeError(f'{self.I.name} is not an emulator, refuse to restart it')
 +        import os,shlex,subprocess,time,psutil
 +        path=os.environ.get('FGO_EMULATOR_PATH')
 +        if not path:raise RuntimeError('FGO_EMULATOR_PATH is not set')
@@ -519,7 +515,8 @@ index 92541a2..83f40b3 100644
 +        schedule.sleep(3)
 +        logger.warning(f'Launch {path} {args}')
 +        subprocess.Popen([path,*args])
-+        schedule.sleep(float(os.environ.get('FGO_EMULATOR_WAIT',20)))
++        # schedule.sleep(float(os.environ.get('FGO_EMULATOR_WAIT',20)))
++        schedule.sleep(20)
 +    def returnHomeAndClearFGOBackgroundAndRestart(self):
 +        print("call returnHomeAndClearFGOBackgroundAndRestart()")
 +        self.I.adb.shell("input keyevent 3")
@@ -529,47 +526,73 @@ index 92541a2..83f40b3 100644
 +        time.sleep(15)
 +        self.I.adb.shell("am start -n " + self.I.package + "/.EmptyClass")
 +        time.sleep(15)
-+    def waitLogin(self,timeout=120,loginDir='fgoImage/login/',flagDir='fgoImage/login/flag/'):
-+        # Taps through the login screens after a restart until a flag image (home screen marker) shows up.
++    # (template file in fgoImage/login, search region (x0,y0,x1,y1), threshold), tried in this order and only the first hit per screenshot is pressed.
++    # Every dialog is "if it appears, press its button": none of them is guaranteed to show up. Regions hug the button (a few pixels of margin) so a template can not match a different button of another dialog.
++    # Specific close buttons come first; the wide-region ones are looser fallbacks.
++    LOGIN_TEMPLATES=(
++        ('closex',(1195,0,1280,80),.1),                 # announcement (X at top right)
++        ('closebtn',(500,520,780,600),.1),              # login bonus dialogs (关闭 at the bottom centre)
++        ('closebtnleft',(175,591,369,651),.1),          # friend point dialog (关闭 is the leftmost of 4 buttons; its neighbours must never be pressed)
++        ('closebtn',(440,420,840,720),.08),             # fallback for other dialogs; stricter, as 支援编队 in the friend point dialog scores .127
++        ('cmDiscard',(0,0,1280,720),.06),
++        ('update',(0,0,1280,720),.1),
++        ('tapscreen5',(490,640,790,702),.1),            # servant page "请点击游戏界面", bright / ghost phase
++        ('tapscreen6',(490,640,790,702),.1),
++        ('tapscreen0',(434,520,846,720),.1),
++        ('tapscreen1',(434,520,846,720),.1),
++        ('tapscreen2',(434,520,846,720),.1),
++        ('tapscreen3',(434,520,846,720),.1),
++        ('tapscreen4',(434,520,846,720),.1),
++        ('logintapscreen0',(425,520,855,720),.1),
++        ('logintapscreen1',(425,520,855,720),.1),
++        ('logintapscreen2',(425,520,855,720),.1),
++        ('logintapscreen3',(425,520,855,720),.1),
++    )
++    def waitLogin(self,timeout=300,loginDir='fgoImage/login/'):
++        # Taps through the login screens after a restart until the main interface (or a resumed battle) shows up.
 +        # XDetect (not Detect) is used on purpose: Detect feeds the fuse, which would re-enter the restart logic.
-+        import os,time
-+        if not os.path.isdir(loginDir)or not os.path.isdir(flagDir):
-+            logger.warning(f'Login images not found in {loginDir}, skip waiting for login')
-+            return False
-+        login,flag=ImageListener(loginDir),ImageListener(flagDir)
++        import time
++        login=ImageListener(loginDir)
 +        end=time.time()+timeout
++        clean=0     # consecutive screenshots with MENU visible and nothing to press
 +        while time.time()<end:
-+            schedule.sleep(5)
++            schedule.sleep(10)
 +            detect=XDetect()
-+            if any(detect.findLogin(i,.05)for i in flag.values()):
-+                logger.info('Login finished')
-+                return True
-+            # Title-screen dialogs ("connection lost, retry?" / "battle in progress, enter?") may pop up repeatedly; only the right-hand button is ever pressed.
-+            if pos:=detect.findLoginDialog():
-+                logger.info(f'Login dialog at {pos}')
-+                self.touch(pos)
-+                end=time.time()+timeout
-+                continue
-+            # A restart in the middle of a battle resumes straight into the turn UI instead of the home screen.
++            # A resumed battle shows the turn UI with nothing left to handle, so it alone is enough.
 +            if detect.isTurnBegin():
 +                logger.info('Login finished (battle resumed)')
 +                return True
-+            for name,i in login.items():
-+                if pos:=detect.findLogin(i,.1):
++            # Title-screen dialogs ("connection lost, retry?" / "battle in progress, enter?") may pop up repeatedly; only the right-hand button is ever pressed.
++            if pos:=detect.findLoginBattleContinueOrReconnectDialog():
++                logger.info(f'Login battle continue or reconnect dialog at {pos}')
++                self.touch(pos)
++                end=time.time()+timeout
++                clean=0
++                continue
++            # Dialogs are handled BEFORE the MENU check: the login bonus / friend point dialogs leave MENU visible behind them.
++            for name,rect,threshold in self.LOGIN_TEMPLATES:
++                if name in login and(pos:=detect._find(login[name],rect,threshold)):
 +                    logger.info(f'Login screen {name} at {pos}')
 +                    self.touch(pos)
 +                    end=time.time()+timeout
++                    clean=0
 +                    break
++            else:
++                # Nothing to press. The next dialog of a chain may still be on its way after the previous one was closed, so MENU has to be seen twice in a row.
++                clean=clean+1 if detect.isMainInterface()else 0
++                if clean>=2:
++                    logger.info('Login finished')
++                    return True
 +        logger.warning(f'Login not finished within {timeout}s')
 +        return False
      enumDevices=Android.enumDevices
      def __getattr__(self,attr):return getattr(self.I,attr,getattr(self.O,attr))
  
 diff --git a/FGO-py/fgoFuse.py b/FGO-py/fgoFuse.py
-index 9e67142..c0a52ba 100644
+index 9e67142..be1271f 100644
 --- a/FGO-py/fgoFuse.py
 +++ b/FGO-py/fgoFuse.py
-@@ -1,22 +1,36 @@
+@@ -1,22 +1,62 @@
 +import time
 +
  from fgoLogging import getLogger
@@ -581,7 +604,7 @@ index 9e67142..c0a52ba 100644
  
  class Fuse:
 -    def __init__(self,fv=300,logsize=10):
-+    def __init__(self,fv=240,logsize=10):
++    def __init__(self,fv=300,logsize=10,escalateWindow=1800):
          self.value=0
          self.max=fv
          self.logsize=logsize
@@ -589,21 +612,47 @@ index 9e67142..c0a52ba 100644
          self.logptr=0
 -    def increase(self):
 +        self.rebooted=False
++        self.escalateWindow=escalateWindow
++        self.lastRestart=None
 +    def increase(self, detect=None):
          logger.debug(f'{self.value}')
          if self.value>self.max:
 -            self.save()
 -            raise ScriptStop('Fused')
 +            if not self.rebooted:
-+                fgoDevice.device.returnHomeAndClearFGOBackgroundAndRestart()
-+                fgoDevice.device = fgoDevice.Device(fgoDevice.device.name)
-+                fgoDevice.device.waitLogin()
++                self.restart()
 +                self.rebooted=True
 +            if self.value > self.max + 720:
 +                traceback.print_stack()
 +                raise ScriptStop('Fused')
 +
          self.value+=1
++    def restartAppAndWait(self,name,timeout=300):
++        try:fgoDevice.device.returnHomeAndClearFGOBackgroundAndRestart()
++        except Exception as e:logger.exception(e)
++        try:fgoDevice.device=fgoDevice.Device(name)
++        except Exception as e:logger.exception(e);return False
++        return fgoDevice.device.waitLogin(timeout=timeout)
++    def restart(self):
++        # Retry the app first. Escalate an emulator only after that retry was ineffective, too slow, or happened recently.
++        now=time.time()
++        escalate=self.lastRestart is not None and now-self.lastRestart<self.escalateWindow
++        self.lastRestart=now
++        name=fgoDevice.device.name
++        isEmulator=fgoDevice.device.isEmulator
++        if not escalate and self.restartAppAndWait(name):return
++        if isEmulator:
++            logger.warning('App restart ineffective or too slow, escalating to emulator restart')
++            try:
++                fgoDevice.device.restartEmulator()
++                fgoDevice.device=fgoDevice.Device(name)
++            except Exception as e:
++                logger.exception(e)
++                logger.warning('Restarting emulator failed, fall back to restarting app only')
++        else:
++            logger.warning('App restart ineffective or too slow, retrying app restart (not an emulator)')
++        self.restartAppAndWait(name)
++        self.lastRestart=time.time()
      def reset(self,detect=None):
          self.value=0
 +        self.rebooted=False
@@ -1000,7 +1049,7 @@ index 234771d..a39059d 100644
          self.ends=ends
          self.listener=DirListener(path)
 diff --git a/FGO-py/fgoKernel.py b/FGO-py/fgoKernel.py
-index edb952e..b99a594 100644
+index edb952e..f5fb5e4 100644
 --- a/FGO-py/fgoKernel.py
 +++ b/FGO-py/fgoKernel.py
 @@ -17,10 +17,12 @@
@@ -1429,7 +1478,7 @@ index edb952e..b99a594 100644
                      ClassicTurn.friendInfo=(lambda r:(lambda p:[
                          [[-1 if p[i*4+j]=='X'else int(p[i*4+j],16)for j in range(4)]for i in range(3)],
                          [-1 if p[i+12]=='X'else int(p[i+12],16)for i in range(2)],
-@@ -566,24 +878,85 @@ class Main:
+@@ -566,24 +878,90 @@ class Main:
              if refresh:schedule.sleep(max(0,timer+10-time.time()))
              fgoDevice.device.perform('\xBAK',(500,1000))
              refresh=True
@@ -1502,6 +1551,11 @@ index edb952e..b99a594 100644
 +        logger.info(f"resolving isGrandBattle and friendClassScoreAtLeast for quest {quest}")
 +        self.resolveIsGrandBattleAndFriendClassScore()    # a quest-specific class score may have been applied; deduce isGrandBattle only if the quest ID didn't tell
 +        if self.questConfig:logger.info(f'Quest {quest} settings: {({k:v for k,v in settings.items()if k!="battleClass"})} battleClass: Battle({settings["battleClass"]().turnName})')
++        else:
++            logger.info(f'No quest config found for quest {quest}, so Operation.questConfig is {self.questConfig}')
++            # the effective values after resolveIsGrandBattleAndFriendClassScore may have adjusted them
++            actual={k:getattr(self,k)for k in sorted(keys-{'battleClass'})}|{'isGrandBattle':self.isGrandBattle}
++            logger.info(f'Actual settings: {actual}; battleClass: Battle({self.battleClass().turnName})')
      def __call__(self):
          super().prepare()
 -        if not self:super().__call__()
