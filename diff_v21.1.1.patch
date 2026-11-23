@@ -481,7 +481,7 @@ index 1f70686..890df9e 100644
      def _compare(self,*args,**kwargs):return super()._compare(*args,**kwargs)and fuse.reset(self)
      def _find(self,*args,**kwargs):
 diff --git a/FGO-py/fgoDevice.py b/FGO-py/fgoDevice.py
-index 92541a2..05a5d83 100644
+index 92541a2..f301996 100644
 --- a/FGO-py/fgoDevice.py
 +++ b/FGO-py/fgoDevice.py
 @@ -1,5 +1,6 @@
@@ -561,7 +561,7 @@ index 92541a2..05a5d83 100644
 +            # A resumed battle shows the turn UI with nothing left to handle, so it alone is enough.
 +            if detect.isTurnBegin():
 +                logger.info('Login finished (battle resumed)')
-+                return True
++                return'battle'
 +            # Title-screen dialogs ("connection lost, retry?" / "battle in progress, enter?") may pop up repeatedly; only the right-hand button is ever pressed.
 +            if pos:=detect.findLoginBattleContinueOrReconnectDialog():
 +                logger.info(f'Login battle continue or reconnect dialog at {pos}')
@@ -582,22 +582,23 @@ index 92541a2..05a5d83 100644
 +                clean=clean+1 if detect.isMainInterface()else 0
 +                if clean>=2:
 +                    logger.info('Login finished')
-+                    return True
++                    return'main'
 +        logger.warning(f'Login not finished within {timeout}s')
 +        return False
      enumDevices=Android.enumDevices
      def __getattr__(self,attr):return getattr(self.I,attr,getattr(self.O,attr))
  
 diff --git a/FGO-py/fgoFuse.py b/FGO-py/fgoFuse.py
-index 9e67142..be1271f 100644
+index 9e67142..7c14a0c 100644
 --- a/FGO-py/fgoFuse.py
 +++ b/FGO-py/fgoFuse.py
-@@ -1,22 +1,62 @@
+@@ -1,22 +1,69 @@
 +import time
 +
  from fgoLogging import getLogger
  from fgoSchedule import ScriptStop
  logger=getLogger('Fuse')
++RestartedToMainInterface=type('RestartedToMainInterface',(ScriptStop,),{})    # the app was restarted and landed on the home screen, whatever was running is gone and has to be re-entered by the caller
 +import fgoDevice
 +import traceback
 +import datetime
@@ -632,15 +633,20 @@ index 9e67142..be1271f 100644
 +        except Exception as e:logger.exception(e)
 +        try:fgoDevice.device=fgoDevice.Device(name)
 +        except Exception as e:logger.exception(e);return False
-+        return fgoDevice.device.waitLogin(timeout=timeout)
++        return fgoDevice.device.waitLogin(timeout=timeout)    # 'battle' (battle resumed) / 'main' (home screen) / False (timeout)
 +    def restart(self):
++        result=self._restart()
++        if result=='main':
++            self.reset()
++            raise RestartedToMainInterface('Restarted to main interface')
++    def _restart(self):
 +        # Retry the app first. Escalate an emulator only after that retry was ineffective, too slow, or happened recently.
 +        now=time.time()
 +        escalate=self.lastRestart is not None and now-self.lastRestart<self.escalateWindow
 +        self.lastRestart=now
 +        name=fgoDevice.device.name
 +        isEmulator=fgoDevice.device.isEmulator
-+        if not escalate and self.restartAppAndWait(name):return
++        if not escalate and(result:=self.restartAppAndWait(name)):return result
 +        if isEmulator:
 +            logger.warning('App restart ineffective or too slow, escalating to emulator restart')
 +            try:
@@ -651,8 +657,9 @@ index 9e67142..be1271f 100644
 +                logger.warning('Restarting emulator failed, fall back to restarting app only')
 +        else:
 +            logger.warning('App restart ineffective or too slow, retrying app restart (not an emulator)')
-+        self.restartAppAndWait(name)
++        result=self.restartAppAndWait(name)
 +        self.lastRestart=time.time()
++        return result
      def reset(self,detect=None):
          self.value=0
 +        self.rebooted=False
@@ -1049,10 +1056,10 @@ index 234771d..a39059d 100644
          self.ends=ends
          self.listener=DirListener(path)
 diff --git a/FGO-py/fgoKernel.py b/FGO-py/fgoKernel.py
-index edb952e..f5fb5e4 100644
+index edb952e..5a85e02 100644
 --- a/FGO-py/fgoKernel.py
 +++ b/FGO-py/fgoKernel.py
-@@ -17,10 +17,12 @@
+@@ -17,15 +17,17 @@
  # .  Grand Order/Anima Animusphere
  # .     冠位指定/人理保障天球
  'Full-automatic FGO Script'
@@ -1066,6 +1073,12 @@ index edb952e..f5fb5e4 100644
  import fgoDevice
  from itertools import permutations
  from functools import wraps
+ from fgoDetect import Detect,XDetect
+-from fgoFuse import fuse
++from fgoFuse import fuse,RestartedToMainInterface
+ from fgoImageListener import ImageListener
+ from fgoLogging import getLogger,logit
+ from fgoMetadata import servantData,missionMat,missionTag,missionQuest
 @@ -166,11 +168,12 @@ def goto(quest):
      fgoDevice.device.perform(*((' ',(600,))if Detect(.6).isTerminal()else('S',(1500,))))
      reishift(quest)
@@ -1084,7 +1097,7 @@ index edb952e..f5fb5e4 100644
  @serialize(mutex)
  def weeklyMission():
      while not Detect(0,1).isMainInterface():pass
-@@ -414,15 +417,263 @@ class Turn:
+@@ -414,15 +417,264 @@ class Turn:
          else:fgoDevice.device.perform('\x08',(700,))
          while not Detect().isTurnBegin():pass
          Detect(.5)
@@ -1329,6 +1342,7 @@ index edb952e..f5fb5e4 100644
 +                        print("Invalid target when casting master skill, skip")
 +                        return
 +                    fgoDevice.device.perform('234'[targets[0]],(300,))
++            except ScriptStop:raise
 +            except:
 +                if isinstance(targets, int):    # view as single target skill
 +                    if targets >= 3:
@@ -1349,7 +1363,7 @@ index edb952e..f5fb5e4 100644
          self.turnProc=turnClass()
          self.rainbowBox=False
      def __call__(self):
-@@ -462,10 +713,44 @@ class Battle:
+@@ -462,10 +714,44 @@ class Battle:
  class Main:
      teamIndex=0
      autoFormation=False
@@ -1395,7 +1409,7 @@ index edb952e..f5fb5e4 100644
      @serialize(mutex)
      def __call__(self,questIndex=0,battleTotal=None):
          self.prepare()
-@@ -473,7 +758,7 @@ class Main:
+@@ -473,7 +759,7 @@ class Main:
              self.battleProc=self.battleClass()
              while True:
                  if Detect(.3,.3).isMainInterface():
@@ -1404,7 +1418,7 @@ index edb952e..f5fb5e4 100644
                      fgoDevice.device.press('84L'[questIndex])
                      questIndex=0
                      if Detect(1.2).isBattleContinue():fgoDevice.device.press('K')
-@@ -481,19 +766,44 @@ class Main:
+@@ -481,19 +767,44 @@ class Main:
                          fgoDevice.device.press('J')
                          return logger.info('No Storm Pot')
                      if Detect(.7,.3).isApEmpty()and not self.eatApple():return logger.info('Ap Empty')
@@ -1452,7 +1466,7 @@ index edb952e..f5fb5e4 100644
                      schedule.sleep(6)
                      break
                  elif Detect.cache.isSkillCastFailed():
-@@ -541,7 +851,7 @@ class Main:
+@@ -541,7 +852,7 @@ class Main:
          logger.warning('Eat Apple')
          return self.appleTotal+1
      @logit(logger,logging.INFO)
@@ -1461,7 +1475,7 @@ index edb952e..f5fb5e4 100644
          refresh=False
          while not Detect(0,.3).isChooseFriend():
              if Detect.cache.isNoFriend():
-@@ -549,12 +859,14 @@ class Main:
+@@ -549,12 +860,14 @@ class Main:
                  fgoDevice.device.perform('\xBAK',(500,1000))
                  refresh=True
                  continue
@@ -1478,7 +1492,7 @@ index edb952e..f5fb5e4 100644
                      ClassicTurn.friendInfo=(lambda r:(lambda p:[
                          [[-1 if p[i*4+j]=='X'else int(p[i*4+j],16)for j in range(4)]for i in range(3)],
                          [-1 if p[i+12]=='X'else int(p[i+12],16)for i in range(2)],
-@@ -566,24 +878,90 @@ class Main:
+@@ -566,24 +879,95 @@ class Main:
              if refresh:schedule.sleep(max(0,timer+10-time.time()))
              fgoDevice.device.perform('\xBAK',(500,1000))
              refresh=True
@@ -1568,9 +1582,15 @@ index edb952e..f5fb5e4 100644
              del self[0]
              goto(quest)
 -            if self.wait:schedule.sleep(max(self.apLookup.get(quest,23)*times-Detect.cache.getAp(),0)*300)
+-            super().__call__(quest[-1],self.battleCount+times if times else None)
 +            self.applySettings(quest)
 +            # if self.wait:schedule.sleep(max(self.apLookup.get(quest,23)*times-Detect.cache.getAp(),0)*300)
-             super().__call__(quest[-1],self.battleCount+times if times else None)
++            total=self.battleCount+times if times else None    # absolute target, so a retry keeps counting from the same battleCount
++            while True:
++                try:super().__call__(quest[-1],total);break
++                except RestartedToMainInterface:
++                    logger.warning('Restarted to main interface, re-entering the quest')
++                    goto(quest)
      def prepare(self):pass
      def getAp(self):return sum(self.apLookup.get(i,23)*j for i,j in self)
 diff --git a/FGO-py/fgoMainWindow.py b/FGO-py/fgoMainWindow.py
