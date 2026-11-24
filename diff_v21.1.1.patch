@@ -110,7 +110,7 @@ index 7fb5e4d..ed39279 100644
  'closeToTray':False,
  'notifyEnable':False,
 diff --git a/FGO-py/fgoDetect.py b/FGO-py/fgoDetect.py
-index 1f70686..890df9e 100644
+index 1f70686..2886d82 100644
 --- a/FGO-py/fgoDetect.py
 +++ b/FGO-py/fgoDetect.py
 @@ -3,7 +3,7 @@ from functools import reduce,wraps
@@ -288,7 +288,7 @@ index 1f70686..890df9e 100644
      def getSummonHistory(self):XDetectBase._summonHistory=self._stack(XDetectBase._summonHistory,cv2.threshold(cv2.cvtColor(self._crop((147,157,1105,547)),cv2.COLOR_BGR2GRAY),128,255,cv2.THRESH_BINARY)[1],80)
      @classmethod
      def getSummonHistoryCount(cls):return cls.__new__(cls).inject(XDetectBase._summonHistory)._count((cls.tmpl.SUMMONHISTORY[0][...,0],cls.tmpl.SUMMONHISTORY[1]),(28,0,60,XDetectBase._summonHistory.shape[0]),.7)
-@@ -177,7 +295,151 @@ class XDetectBase(metaclass=logMeta(logger)):
+@@ -177,7 +295,161 @@ class XDetectBase(metaclass=logMeta(logger)):
      def getTeamServantClassRank(self):return[(lambda x:x if x is None else classImg[0][x])(self._select(CLASS[100],(30+200*i+15*(i>2),133,115+200*i+15*(i>2),203)))for i in range(6)]
      def getWeeklyMission(self):XDetectBase._weeklyMission=self._stack(XDetectBase._weeklyMission,self._crop((603,250,1092,710)),157)
      def findChapter(self,chapter):return self._find((chapterImg[chapter],None),(640,90,1230,600))
@@ -347,6 +347,7 @@ index 1f70686..890df9e 100644
 +
 +            if len(allowedReisous) > 0:
 +                if type(allowedReisous[0]) == str:
++                    allowedReisouNames = list(allowedReisous)
 +                    allowedReisous = [eval("self.tmpl." + reisou.upper(), {}, {"self": self}) for reisou in allowedReisous]
 +                if isGrandBattle:
 +                    # servant_y_range bottom: 376; reisou box boundaries: 366, 320, 274, 227
@@ -364,8 +365,17 @@ index 1f70686..890df9e 100644
 +                    if matched_num < 2:
 +                        print("reisou does not match")
 +                        continue
++                else:
++                    # example: measured bottom: 375, reisou bottom 369, reisou top 327 (conservative); x: [52, 207]
++                    reisou_region = (52, servant_y_range[1] - 47, 207, servant_y_range[1] - 7)
++                    crop = self._crop(reisou_region)
++                    matched = [name for name, reisou in zip(allowedReisouNames, allowedReisous) if cv2.minMaxLoc(cv2.matchTemplate(reisou[0], crop, cv2.TM_SQDIFF_NORMED))[0] < .06]
++                    print("matched reisous:", matched)
++                    if not matched:
++                        continue
 +
-+            if isGrandBattle:
++
++            if isGrandBattle and (requireKizunaReisouToNP or requireKizunaReisou):
 +                # servant_y_range bottom: 576
 +                # kizuna_reisou converted to NP: (220, 475, 246, 500)
 +                kizuna_reisou_symbol_region = (220, servant_y_range[1] - 102, 246, servant_y_range[1] - 76)
@@ -441,7 +451,7 @@ index 1f70686..890df9e 100644
      def findMail(self,img):return self._find(img,(73,166,920,720),.017)
      def findMapCamera(self,chapter):return numpy.array(cv2.minMaxLoc(cv2.matchTemplate(mapImg[chapter],cv2.resize(self._crop((200,200,1080,520)),(0,0),fx=.3,fy=.3,interpolation=cv2.INTER_CUBIC),cv2.TM_SQDIFF_NORMED))[2])/.3+(440,160)
      @classmethod
-@@ -193,6 +455,9 @@ class XDetectBase(metaclass=logMeta(logger)):
+@@ -193,6 +465,9 @@ class XDetectBase(metaclass=logMeta(logger)):
      def getTeamServantHouguLv(self):raise NotImplementedError
      def getTeamServantRank(self):raise NotImplementedError
      def getTeamServantSkillLv(self):raise NotImplementedError
@@ -451,7 +461,7 @@ index 1f70686..890df9e 100644
  class XDetectCN(XDetectBase):
      tmpl=IMG_CN
      ocr=OCR.ZHS
-@@ -206,6 +471,19 @@ class XDetectCN(XDetectBase):
+@@ -206,6 +481,19 @@ class XDetectCN(XDetectBase):
                  mission=''
              else:mission+=i
          return result
@@ -471,7 +481,7 @@ index 1f70686..890df9e 100644
  class XDetectJP(XDetectBase):
      tmpl=IMG_JP
      ocr=OCR.JA
-@@ -222,7 +500,7 @@ class DetectBase(XDetectBase):
+@@ -222,7 +510,7 @@ class DetectBase(XDetectBase):
      def __init__(self,anteLatency=.1,postLatency=0):
          schedule.sleep(anteLatency)
          super().__init__()
@@ -1056,7 +1066,7 @@ index 234771d..a39059d 100644
          self.ends=ends
          self.listener=DirListener(path)
 diff --git a/FGO-py/fgoKernel.py b/FGO-py/fgoKernel.py
-index edb952e..5a85e02 100644
+index edb952e..d5c18ae 100644
 --- a/FGO-py/fgoKernel.py
 +++ b/FGO-py/fgoKernel.py
 @@ -17,15 +17,17 @@
@@ -1097,7 +1107,7 @@ index edb952e..5a85e02 100644
  @serialize(mutex)
  def weeklyMission():
      while not Detect(0,1).isMainInterface():pass
-@@ -414,15 +417,264 @@ class Turn:
+@@ -414,15 +417,266 @@ class Turn:
          else:fgoDevice.device.perform('\x08',(700,))
          while not Detect().isTurnBegin():pass
          Detect(.5)
@@ -1356,6 +1366,8 @@ index edb952e..5a85e02 100644
 +    def getServantHP(self): return [Detect.cache.getFieldServantHp(i)if self.servant[i][0]else 999999 for i in range(3)]
 +
 +
++
++# Customized Turns
  class Battle:
      def __init__(self,turnClass=Turn):
          self.turn=0
@@ -1363,7 +1375,7 @@ index edb952e..5a85e02 100644
          self.turnProc=turnClass()
          self.rainbowBox=False
      def __call__(self):
-@@ -462,10 +714,44 @@ class Battle:
+@@ -462,10 +716,44 @@ class Battle:
  class Main:
      teamIndex=0
      autoFormation=False
@@ -1409,7 +1421,7 @@ index edb952e..5a85e02 100644
      @serialize(mutex)
      def __call__(self,questIndex=0,battleTotal=None):
          self.prepare()
-@@ -473,7 +759,7 @@ class Main:
+@@ -473,7 +761,7 @@ class Main:
              self.battleProc=self.battleClass()
              while True:
                  if Detect(.3,.3).isMainInterface():
@@ -1418,7 +1430,7 @@ index edb952e..5a85e02 100644
                      fgoDevice.device.press('84L'[questIndex])
                      questIndex=0
                      if Detect(1.2).isBattleContinue():fgoDevice.device.press('K')
-@@ -481,19 +767,44 @@ class Main:
+@@ -481,19 +769,44 @@ class Main:
                          fgoDevice.device.press('J')
                          return logger.info('No Storm Pot')
                      if Detect(.7,.3).isApEmpty()and not self.eatApple():return logger.info('Ap Empty')
@@ -1466,7 +1478,7 @@ index edb952e..5a85e02 100644
                      schedule.sleep(6)
                      break
                  elif Detect.cache.isSkillCastFailed():
-@@ -541,7 +852,7 @@ class Main:
+@@ -541,7 +854,7 @@ class Main:
          logger.warning('Eat Apple')
          return self.appleTotal+1
      @logit(logger,logging.INFO)
@@ -1475,7 +1487,7 @@ index edb952e..5a85e02 100644
          refresh=False
          while not Detect(0,.3).isChooseFriend():
              if Detect.cache.isNoFriend():
-@@ -549,12 +860,14 @@ class Main:
+@@ -549,12 +862,14 @@ class Main:
                  fgoDevice.device.perform('\xBAK',(500,1000))
                  refresh=True
                  continue
@@ -1492,7 +1504,7 @@ index edb952e..5a85e02 100644
                      ClassicTurn.friendInfo=(lambda r:(lambda p:[
                          [[-1 if p[i*4+j]=='X'else int(p[i*4+j],16)for j in range(4)]for i in range(3)],
                          [-1 if p[i+12]=='X'else int(p[i+12],16)for i in range(2)],
-@@ -566,24 +879,95 @@ class Main:
+@@ -566,24 +881,95 @@ class Main:
              if refresh:schedule.sleep(max(0,timer+10-time.time()))
              fgoDevice.device.perform('\xBAK',(500,1000))
              refresh=True
