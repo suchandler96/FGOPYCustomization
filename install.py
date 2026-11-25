@@ -59,6 +59,7 @@ def main():
     shutil.copy(os.path.join(os.path.dirname(os.path.abspath(__file__)), "kizunareisoutonp.png"), os.path.join(fgo_py_dir, "fgoImage"))
     shutil.copy(os.path.join(os.path.dirname(os.path.abspath(__file__)), "kizuna10.png"), os.path.join(fgo_py_dir, "fgoImage"))
     shutil.copy(os.path.join(os.path.dirname(os.path.abspath(__file__)), "kizuna15.png"), os.path.join(fgo_py_dir, "fgoImage"))
+    shutil.copy(os.path.join(os.path.dirname(os.path.abspath(__file__)), "kizunahuman.png"), os.path.join(fgo_py_dir, "fgoImage"))
     shutil.copy(os.path.join(os.path.dirname(os.path.abspath(__file__)), "kizunabeast.png"), os.path.join(fgo_py_dir, "fgoImage"))
     shutil.copy(os.path.join(os.path.dirname(os.path.abspath(__file__)), "kizunaclothes.png"), os.path.join(fgo_py_dir, "fgoImage"))
     shutil.copy(os.path.join(os.path.dirname(os.path.abspath(__file__)), "kizunaorderedfemale.png"), os.path.join(fgo_py_dir, "fgoImage"))
