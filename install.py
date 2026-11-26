@@ -107,7 +107,6 @@ def main():
         f.seek(0)
         f.truncate()
         f.writelines(lines[:battle_class_line])
-        f.write("\n# Customized Turns\n")
         f.writelines(to_add_lines)
         f.writelines(lines[battle_class_line:])
 
