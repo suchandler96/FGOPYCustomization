@@ -677,7 +677,7 @@ index 9e67142..7c14a0c 100644
              self.log[self.logptr]=detect
              self.logptr=(self.logptr+1)%self.logsize
 diff --git a/FGO-py/fgoGui.py b/FGO-py/fgoGui.py
-index 5a044e9..4a2c4a3 100644
+index 5a044e9..e96eb25 100644
 --- a/FGO-py/fgoGui.py
 +++ b/FGO-py/fgoGui.py
 @@ -8,7 +8,7 @@ import fgoDevice
@@ -715,7 +715,7 @@ index 5a044e9..4a2c4a3 100644
          self.LST_QUEST.setCurrentRow(cur)
      def funcBegin(self):
          self.BTN_MAIN.setEnabled(False)
-@@ -180,8 +181,13 @@ class MainWindow(QMainWindow,Ui_fgoMainWindow):
+@@ -180,8 +181,15 @@ class MainWindow(QMainWindow,Ui_fgoMainWindow):
          self.MENU_CONTROL_MAPKEY.setChecked(False)
      def runMain(self):
          self.operation.battleClass=fgoKernel.Battle
@@ -725,12 +725,14 @@ index 5a044e9..4a2c4a3 100644
 -    def runBattle(self):self.runFunc(fgoKernel.Battle())
 +    def runBattle(self):
 +        path=self.config.get("questConfig","")or None
-+        battleClass=fgoKernel.QuestConfig(path).default.get('battleClass')if path else None
-+        self.runFunc(battleClass()if battleClass else fgoKernel.Battle())
++        settings=fgoKernel.QuestConfig(path).default if path else {}
++        battle=settings['battleClass']()if settings.get('battleClass')else fgoKernel.Battle()
++        logger.info(f'battleClass: Battle({battle.turnName})')
++        self.runFunc(battle)
      def runClassic(self):
          if not Teamup(self).exec():return
          self.operation.battleClass=lambda:fgoKernel.Battle(fgoKernel.ClassicTurn)
-@@ -239,7 +245,7 @@ class MainWindow(QMainWindow,Ui_fgoMainWindow):
+@@ -239,7 +247,7 @@ class MainWindow(QMainWindow,Ui_fgoMainWindow):
          try:exec(s)
          except BaseException as e:logger.exception(e)
      def questQuery(self,index):
@@ -1066,7 +1068,7 @@ index 234771d..a39059d 100644
          self.ends=ends
          self.listener=DirListener(path)
 diff --git a/FGO-py/fgoKernel.py b/FGO-py/fgoKernel.py
-index edb952e..d5c18ae 100644
+index edb952e..5a85e02 100644
 --- a/FGO-py/fgoKernel.py
 +++ b/FGO-py/fgoKernel.py
 @@ -17,15 +17,17 @@
@@ -1107,7 +1109,7 @@ index edb952e..d5c18ae 100644
  @serialize(mutex)
  def weeklyMission():
      while not Detect(0,1).isMainInterface():pass
-@@ -414,15 +417,266 @@ class Turn:
+@@ -414,15 +417,264 @@ class Turn:
          else:fgoDevice.device.perform('\x08',(700,))
          while not Detect().isTurnBegin():pass
          Detect(.5)
@@ -1366,8 +1368,6 @@ index edb952e..d5c18ae 100644
 +    def getServantHP(self): return [Detect.cache.getFieldServantHp(i)if self.servant[i][0]else 999999 for i in range(3)]
 +
 +
-+
-+# Customized Turns
  class Battle:
      def __init__(self,turnClass=Turn):
          self.turn=0
@@ -1375,7 +1375,7 @@ index edb952e..d5c18ae 100644
          self.turnProc=turnClass()
          self.rainbowBox=False
      def __call__(self):
-@@ -462,10 +716,44 @@ class Battle:
+@@ -462,10 +714,44 @@ class Battle:
  class Main:
      teamIndex=0
      autoFormation=False
@@ -1421,7 +1421,7 @@ index edb952e..d5c18ae 100644
      @serialize(mutex)
      def __call__(self,questIndex=0,battleTotal=None):
          self.prepare()
-@@ -473,7 +761,7 @@ class Main:
+@@ -473,7 +759,7 @@ class Main:
              self.battleProc=self.battleClass()
              while True:
                  if Detect(.3,.3).isMainInterface():
@@ -1430,7 +1430,7 @@ index edb952e..d5c18ae 100644
                      fgoDevice.device.press('84L'[questIndex])
                      questIndex=0
                      if Detect(1.2).isBattleContinue():fgoDevice.device.press('K')
-@@ -481,19 +769,44 @@ class Main:
+@@ -481,19 +767,44 @@ class Main:
                          fgoDevice.device.press('J')
                          return logger.info('No Storm Pot')
                      if Detect(.7,.3).isApEmpty()and not self.eatApple():return logger.info('Ap Empty')
@@ -1478,7 +1478,7 @@ index edb952e..d5c18ae 100644
                      schedule.sleep(6)
                      break
                  elif Detect.cache.isSkillCastFailed():
-@@ -541,7 +854,7 @@ class Main:
+@@ -541,7 +852,7 @@ class Main:
          logger.warning('Eat Apple')
          return self.appleTotal+1
      @logit(logger,logging.INFO)
@@ -1487,7 +1487,7 @@ index edb952e..d5c18ae 100644
          refresh=False
          while not Detect(0,.3).isChooseFriend():
              if Detect.cache.isNoFriend():
-@@ -549,12 +862,14 @@ class Main:
+@@ -549,12 +860,14 @@ class Main:
                  fgoDevice.device.perform('\xBAK',(500,1000))
                  refresh=True
                  continue
@@ -1504,7 +1504,7 @@ index edb952e..d5c18ae 100644
                      ClassicTurn.friendInfo=(lambda r:(lambda p:[
                          [[-1 if p[i*4+j]=='X'else int(p[i*4+j],16)for j in range(4)]for i in range(3)],
                          [-1 if p[i+12]=='X'else int(p[i+12],16)for i in range(2)],
-@@ -566,24 +881,95 @@ class Main:
+@@ -566,24 +879,95 @@ class Main:
              if refresh:schedule.sleep(max(0,timer+10-time.time()))
              fgoDevice.device.perform('\xBAK',(500,1000))
              refresh=True
